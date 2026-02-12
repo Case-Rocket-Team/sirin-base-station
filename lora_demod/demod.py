@@ -1,14 +1,14 @@
 from gnuradio import gr
 from gnuradio import blocks
-import sys
 import signal
 import numpy as np
 import gnuradio.lora_sdr as lora_sdr
 from gnuradio import soapy
 import base64
 import pmt
+import sys
 
-class lora_RX(gr.top_block):
+class lora_rx(gr.top_block):
     def __init__(self):
         gr.top_block.__init__(self, "Lora Rx (HackRF via Soapy)", catch_exceptions=True)
 
@@ -102,12 +102,10 @@ class PrintBase64(gr.basic_block):
         except Exception as e:
             print(f"Error decoding message: {e}")
 
-
-
 def main():
-    tb = lora_RX()
+    tb = lora_rx()
 
-    def sig_handler(sig=None, frame=None):
+    def sig_handler():
         tb.stop()
         tb.wait()
         sys.exit(0)
