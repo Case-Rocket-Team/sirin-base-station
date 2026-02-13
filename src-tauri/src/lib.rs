@@ -1,11 +1,12 @@
 use serde::Serialize;
 use sirin_shared::{song::{FromSong, SongSize, ToSong}, state::NominalState};
+use tauri::Listener;
 use std::sync::Arc;
 use tokio::net::TcpListener;
 use tokio::sync::{broadcast, Mutex};
-use tokio_tungstenite::accept_async;
 use futures_util::{SinkExt, StreamExt};
 use std::time::Duration;
+use tokio_tungstenite::{connect_async, tungstenite::protocol::Message, accept_async};
 
 /// Converts a Song-serialized byte buffer to JSON string
 fn song_to_json<T: FromSong + Serialize>(buf: &[u8]) -> Result<String, String> {
@@ -31,17 +32,34 @@ async fn run_websocket_server() {
     // Spawn the state update loop
     let tx_clone = tx.clone();
     tokio::spawn(async move {
-        let mut state = NominalState::default();
-        loop {
-            // Increment state
-            state.pos.x.value += 1.0;
-            state.pos.y.value += 0.5;
-            state.pos.z.value += 0.25;
+        const SIRIN_URL: &str = "ws://localhost:9002/sirin_packet_endpoint";
 
-            // Serialize and broadcast to all clients
-            if let Ok(json) = state_to_json(&state) {
-                // Ignore send errors (no receivers)
-                let _ = tx_clone.send(json);
+        loop {
+            match connect_async(SIRIN_URL).await {
+                Ok((mut ws, _)) => {
+                    println!("Connected to sirin feed at {SIRIN_URL}");
+
+                    while let Some(msg) = ws.next().await {
+                        match msg {
+                            Ok(Message::Binary(payload)) => match song_to_json::<NominalState>(&payload) {
+                                Ok(json) => {
+                                    println!("{json}");
+                                    let _ = tx_clone.send(json);
+                                }
+                                Err(e) => eprintln!("Failed to parse sirin packet: {e}"),
+                            },
+                            Ok(Message::Text(text)) => println!("{text}"),
+                            Ok(_) => eprintln!("Unexpected packet type from sirin websocket"),
+                            Err(e) => {
+                                eprintln!("Sirin websocket error: {e}");
+                                break;
+                            }
+                        }
+                    }
+
+                    eprintln!("Sirin websocket closed, retrying in 1s");
+                }
+                Err(e) => eprintln!("Failed to connect to sirin feed: {e}"),
             }
 
             tokio::time::sleep(Duration::from_secs(1)).await;

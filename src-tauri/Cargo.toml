@@ -22,7 +22,7 @@ tauri = { version = "2", features = [] }
 tauri-plugin-opener = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-sirin-shared = { path = "sirin-local/sirin-shared", features = ["serde"] }
+sirin-shared = { path = "../../sirin/sirin-shared", features = ["serde"] }
 tokio = { version = "1", features = ["full"] }
 tokio-tungstenite = "0.21"
 futures-util = "0.3"
