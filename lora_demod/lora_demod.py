@@ -1,12 +1,12 @@
-from gnuradio import gr
-from gnuradio import blocks
+from gnuradio import soapy, gr
 import signal
 import numpy as np
 import gnuradio.lora_sdr as lora_sdr
-from gnuradio import soapy
-import base64
-import pmt
 import sys
+import asyncio
+from websockets.asyncio.server import serve, broadcast
+import threading
+import argparse
 
 class lora_rx(gr.top_block):
     def __init__(self):
@@ -54,10 +54,10 @@ class lora_rx(gr.top_block):
         self.lora_sdr_fft_demod_0 = lora_sdr.fft_demod(soft_decoding, True)
         self.lora_sdr_dewhitening_0 = lora_sdr.dewhitening()
         self.lora_sdr_deinterleaver_0 = lora_sdr.deinterleaver(soft_decoding)
-        self.lora_sdr_crc_verif_0 = lora_sdr.crc_verif(1, False)
+        self.lora_sdr_crc_verif_0 = lora_sdr.crc_verif(2, True)
         
         # Added to print packets to terminal
-        self.blocks_message_debug_0 = blocks.message_debug()
+        #self.blocks_message_debug_0 = blocks.message_debug()
 
         ##################################################
         # Connections
@@ -65,7 +65,7 @@ class lora_rx(gr.top_block):
         self.msg_connect((self.lora_sdr_header_decoder_0, 'frame_info'), (self.lora_sdr_frame_sync_0, 'frame_info'))
         
         # Packet Printing Connection
-        self.msg_connect((self.lora_sdr_crc_verif_0, 'msg'), (self.blocks_message_debug_0, 'print'))
+        #self.msg_connect((self.lora_sdr_crc_verif_0, 'msg'), (self.blocks_message_debug_0, 'print'))
 
         self.connect((self.soapy_source_0, 0), (self.lora_sdr_frame_sync_0, 0))
         self.connect((self.lora_sdr_frame_sync_0, 0), (self.lora_sdr_fft_demod_0, 0))
@@ -75,36 +75,56 @@ class lora_rx(gr.top_block):
         self.connect((self.lora_sdr_hamming_dec_0, 0), (self.lora_sdr_header_decoder_0, 0))
         self.connect((self.lora_sdr_header_decoder_0, 0), (self.lora_sdr_dewhitening_0, 0))
         self.connect((self.lora_sdr_dewhitening_0, 0), (self.lora_sdr_crc_verif_0, 0))
+class byte_recv_callback(gr.sync_block):
+    """
+    A sink block that calls a Python function whenever new bytes arrive.
+    """
+    def __init__(self, callback):
+        gr.sync_block.__init__(
+            self,
+            name="CallbackBytesSink",
+            in_sig=[np.uint8],  # 8-bit byte input
+            out_sig=None
+        )
+        self.cb = callback
 
-class PrintBase64(gr.basic_block):
-    def __init__(self):
-        gr.basic_block.__init__(self,
-            name="PrintBase64",
-            in_sig=None,
-            out_sig=None)
-        # Register an input message port named 'in'
-        self.message_port_register_in(pmt.intern('in'))
-        self.set_msg_handler(pmt.intern('in'), self.handle_msg)
+    def work(self, input_items, output_items):
+        new_bytes = input_items[0]
+        if len(new_bytes) > 0:
+            self.cb(new_bytes)
+        return len(new_bytes)
 
-    def handle_msg(self, msg):
-        try:
-            # PDU is a pair: (metadata_dict, data_vector)
-            # pmt.cdr(msg) gets the data_vector part
-            payload = pmt.cdr(msg)
-            
-            # Convert the PDU u8vector to a standard Python byte array
-            data_bytes = bytes(pmt.u8vector_elements(payload))
-            
-            # Encode to Base64
-            b64_str = base64.b64encode(data_bytes).decode('utf-8')
-            
-            print(f"Base64 Message: {b64_str}")
-        except Exception as e:
-            print(f"Error decoding message: {e}")
 
 def main():
-    tb = lora_rx()
+    parser = argparse.ArgumentParser("lora_demod")
+    parser.add_argument("--port", help="Port of the websocket server, default 8765", type=int, default=8765)
+    parser.add_argument("--host", help="Host of the websocket server, default localhost", type=str, default="localhost")
+    args = parser.parse_args()
 
+    clients = set()
+
+    async def handle_conn(socket):
+        clients.add(socket)
+        try:
+            await socket.wait_closed()
+        finally:
+            clients.remove(socket)
+
+    async def start():
+        async with serve(handle_conn, args.host, args.port) as server:
+            print(f"Websocket opened on ws://{args.host}:{args.port}")
+            await server.serve_forever()
+    
+    threading.Thread(target=lambda: asyncio.run(start()), daemon=True).start()
+    
+    tb = lora_rx()
+    sink = byte_recv_callback(lambda msg: broadcast(clients, bytes(msg)))
+
+    tb.connect(
+        (tb.lora_sdr_crc_verif_0, 0),
+        (sink, 0)
+    )
+    
     def sig_handler():
         tb.stop()
         tb.wait()
@@ -114,12 +134,9 @@ def main():
     signal.signal(signal.SIGTERM, sig_handler)
 
     tb.start()
-    try:
-        input("Press Enter to quit: ")
-    except EOFError:
-        pass
-    tb.stop()
-    tb.wait()
+    print("Listening...")
+    while True:
+        input("")
 
 if __name__ == "__main__":
     main()
