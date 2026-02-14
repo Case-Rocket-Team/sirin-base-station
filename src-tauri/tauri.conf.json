@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "packet-visualizer",
+  "productName": "sirin-base-station",
   "version": "0.1.0",
-  "identifier": "com.packet-visualizer.app",
+  "identifier": "com.sirin-base-station.app",
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:1420",
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "packet-visualizer",
+        "title": "sirin-base-station",
         "width": 800,
         "height": 600
       }
