@@ -241,6 +241,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "bitsong"
+version = "0.1.3"
+dependencies = [
+ "bitsong-macros",
+ "derive_more 2.1.1",
+ "str_array",
+]
+
+[[package]]
+name = "bitsong-macros"
+version = "0.1.1"
+dependencies = [
+ "anyhow",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.114",
+]
+
+[[package]]
 name = "block-buffer"
 version = "0.10.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2398,6 +2417,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "paste"
+version = "1.0.15"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "57c0d7b74b563b49d38dae00a0c37d4d6de9b432382b2892f0574ddcae73fd0a"
+
+[[package]]
 name = "pathdiff"
 version = "0.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3317,13 +3342,14 @@ dependencies = [
 name = "sirin-shared"
 version = "0.1.0"
 dependencies = [
+ "bitsong",
  "derive_more 2.1.1",
  "embedded-hal",
  "num-traits",
+ "paste",
  "serde",
  "serde-big-array",
  "sirin-macros",
- "snafu",
  "uunit",
 ]
 
@@ -3338,27 +3364,6 @@ name = "smallvec"
 version = "1.15.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "67b1b7a3b5fe4f1376887184045fcf45c69e92af734b7aaddc05fb777b6fbd03"
-
-[[package]]
-name = "snafu"
-version = "0.8.9"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6e84b3f4eacbf3a1ce05eac6763b4d629d60cbc94d632e4092c54ade71f1e1a2"
-dependencies = [
- "snafu-derive",
-]
-
-[[package]]
-name = "snafu-derive"
-version = "0.8.9"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c1c97747dbf44bb1ca44a561ece23508e99cb592e862f22222dcf42f51d1e451"
-dependencies = [
- "heck 0.5.0",
- "proc-macro2",
- "quote",
- "syn 2.0.114",
-]
 
 [[package]]
 name = "socket2"
@@ -3423,6 +3428,15 @@ name = "stable_deref_trait"
 version = "1.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6ce2be8dc25455e1f91df71bfa12ad37d7af1092ae736f3a6cd0e37bc7810596"
+
+[[package]]
+name = "str_array"
+version = "1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c3cb988fba6c02fde3769ac1838279774f8ac318cbf3c0d846cfe9daab361f7c"
+dependencies = [
+ "autocfg",
+]
 
 [[package]]
 name = "string_cache"
