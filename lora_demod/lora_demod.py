@@ -9,7 +9,7 @@ import threading
 import argparse
 
 class lora_rx(gr.top_block):
-    def __init__(self):
+    def __init__(self, filename):
         gr.top_block.__init__(self, "Lora Rx (HackRF via Soapy)", catch_exceptions=True)
 
         ##################################################
@@ -36,13 +36,16 @@ class lora_rx(gr.top_block):
         stream_args = ""
         tune_args = [""]
         other_settings = [""]
-        
-        self.soapy_source_0 = soapy.source(device, dtype, nchan, dev_args, stream_args, tune_args, other_settings)
-        self.soapy_source_0.set_sample_rate(0, samp_rate)
-        self.soapy_source_0.set_frequency(0, center_freq)
-        self.soapy_source_0.set_bandwidth(0, bw)
-        self.soapy_source_0.set_gain(0, 20)
-        self.soapy_source_0.set_min_output_buffer(int(np.ceil(samp_rate / bw * (2**sf + 2))))
+
+        if(filename):
+            self.source= gr.file_source(gr.sizeof_gr_complex, filename, True)
+        else:
+            self.source = soapy.source(device, dtype, nchan, dev_args, stream_args, tune_args, other_settings)
+            self.source.set_sample_rate(0, samp_rate)
+            self.source.set_frequency(0, center_freq)
+            self.source.set_bandwidth(0, bw)
+            self.source.set_gain(0, 20)
+            self.source.set_min_output_buffer(int(np.ceil(samp_rate / bw * (2**sf + 2))))
 
         ##################################################
         # LoRa SDR blocks
@@ -75,6 +78,7 @@ class lora_rx(gr.top_block):
         self.connect((self.lora_sdr_hamming_dec_0, 0), (self.lora_sdr_header_decoder_0, 0))
         self.connect((self.lora_sdr_header_decoder_0, 0), (self.lora_sdr_dewhitening_0, 0))
         self.connect((self.lora_sdr_dewhitening_0, 0), (self.lora_sdr_crc_verif_0, 0))
+        
 class byte_recv_callback(gr.sync_block):
     """
     A sink block that calls a Python function whenever new bytes arrive.
@@ -99,7 +103,10 @@ def main():
     parser = argparse.ArgumentParser("lora_demod")
     parser.add_argument("--port", help="Port of the websocket server, default 8765", type=int, default=8765)
     parser.add_argument("--host", help="Host of the websocket server, default localhost", type=str, default="localhost")
-    args = parser.parse_args()
+    parser.add_argument("--file", help="File to read HackRf output from, default lora_demod", type=str, default="lora_demod")
+    args = parser.parse_args() 
+
+    filename = args.file
 
     clients = set()
 
@@ -117,7 +124,7 @@ def main():
     
     threading.Thread(target=lambda: asyncio.run(start()), daemon=True).start()
     
-    tb = lora_rx()
+    tb = lora_rx(filename)
     sink = byte_recv_callback(lambda msg: broadcast(clients, bytes(msg)))
 
     tb.connect(
