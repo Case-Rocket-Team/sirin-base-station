@@ -2,5 +2,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 fn main() {
+    //sirin_base_station_lib::run_lora_demod();
     sirin_base_station_lib::run();
 }

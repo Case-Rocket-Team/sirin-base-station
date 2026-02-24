@@ -2,7 +2,8 @@ use serde::Serialize;
 use sirin_shared::{packet::{OutPacket, RadioPacket}, song::{FromSong, SongSize, ToSong}, state::NominalState};
 use tauri::{AppHandle, Listener, ipc::Channel};
 use futures_util::StreamExt;
-use tokio_tungstenite::{connect_async, tungstenite::protocol::Message};
+use tokio_tungstenite::{connect_async, tungstenite::{connect, protocol::Message}};
+use std::process::Command;
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase", rename_all_fields = "camelCase")]
@@ -67,4 +68,19 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+pub fn run_lora_demod() {
+    Command::new("python3") // or "python" on Windows
+        .arg("../lora_demod/lora_demod.sh")
+        .spawn()
+        .expect("Failed to start lora_demod.sh");
+}
+
+#[tauri::command]
+async fn check_hackrf() -> bool {
+    return match connect_async("ws://localhost:8765").await{
+        Ok(_ws) => true,
+        Err(_e) => false
+    }
 }
