@@ -1,4 +1,4 @@
-from gnuradio import soapy, gr
+from gnuradio import soapy, gr, blocks
 import signal
 import numpy as np
 import gnuradio.lora_sdr as lora_sdr
@@ -7,9 +7,10 @@ import asyncio
 from websockets.asyncio.server import serve, broadcast
 import threading
 import argparse
+from gnuradio import zeromq
 
 class lora_rx(gr.top_block):
-    def __init__(self, filename):
+    def __init__(self, zmq, zmq_addr="tcp://127.0.0.1:5555"):
         gr.top_block.__init__(self, "Lora Rx (HackRF via Soapy)", catch_exceptions=True)
 
         ##################################################
@@ -27,19 +28,28 @@ class lora_rx(gr.top_block):
         self.sync_word = sync_word = 0x12
 
         ##################################################
-        # Soapy HackRF Source
+        # Source: either HackRF (Soapy) or ZMQ
         ##################################################
-        device = "driver=hackrf"
-        dtype = "fc32"
-        nchan = 1
-        dev_args = ""
-        stream_args = ""
-        tune_args = [""]
-        other_settings = [""]
-
-        if(filename):
-            self.source= gr.file_source(gr.sizeof_gr_complex, filename, True)
+        if zmq:
+            # ZMQ SUB source
+            # Pick the endpoint for this script (e.g. 5555 or 5556)
+            self.source = zeromq.sub_source(
+                gr.sizeof_gr_complex,   # itemsize
+                1,                      # vlen
+                zmq_addr,               # zmq endpoint to sub to
+                100,                    # timeout ms
+                False,                  # pass_tags
+                -1                      # hwm (-1 = default)
+            )
         else:
+            device = "driver=hackrf"
+            dtype = "fc32"
+            nchan = 1
+            dev_args = ""
+            stream_args = ""
+            tune_args = [""]
+            other_settings = [""]
+
             self.source = soapy.source(device, dtype, nchan, dev_args, stream_args, tune_args, other_settings)
             self.source.set_sample_rate(0, samp_rate)
             self.source.set_frequency(0, center_freq)
@@ -70,7 +80,7 @@ class lora_rx(gr.top_block):
         # Packet Printing Connection
         #self.msg_connect((self.lora_sdr_crc_verif_0, 'msg'), (self.blocks_message_debug_0, 'print'))
 
-        self.connect((self.soapy_source_0, 0), (self.lora_sdr_frame_sync_0, 0))
+        self.connect((self.source, 0), (self.lora_sdr_frame_sync_0, 0))
         self.connect((self.lora_sdr_frame_sync_0, 0), (self.lora_sdr_fft_demod_0, 0))
         self.connect((self.lora_sdr_fft_demod_0, 0), (self.lora_sdr_gray_mapping_0, 0))
         self.connect((self.lora_sdr_gray_mapping_0, 0), (self.lora_sdr_deinterleaver_0, 0))
@@ -103,10 +113,10 @@ def main():
     parser = argparse.ArgumentParser("lora_demod")
     parser.add_argument("--port", help="Port of the websocket server, default 8765", type=int, default=8765)
     parser.add_argument("--host", help="Host of the websocket server, default localhost", type=str, default="localhost")
-    parser.add_argument("--file", help="File to read HackRf output from, default lora_demod", type=str, default="lora_demod")
-    args = parser.parse_args() 
-
-    filename = args.file
+    parser.add_argument("--zmq", help="Use ZMQ block to listen to published messages", action='store_true')
+    parser.add_argument("--zmq", action="store_true", help="Use ZMQ source instead of HackRF")
+    parser.add_argument("--zmq-addr", default="tcp://127.0.0.1:5555", help="ZMQ endpoint to SUB connect to")
+    args = parser.parse_args()
 
     clients = set()
 
@@ -124,7 +134,7 @@ def main():
     
     threading.Thread(target=lambda: asyncio.run(start()), daemon=True).start()
     
-    tb = lora_rx(filename)
+    tb = lora_rx(args.zmq, args.zmq_addr)
     sink = byte_recv_callback(lambda msg: broadcast(clients, bytes(msg)))
 
     tb.connect(
