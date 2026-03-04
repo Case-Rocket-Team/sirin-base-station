@@ -15,8 +15,9 @@ interface LoraPacketRx {
   packet: Record<string, any>;
 }
 
-listen<LoraPacketRx>("lora-packet", (event) => {
-  setLatestPacket(event.payload);
+listen("lora-packet", (event) => {
+  const packet = event.payload;
+  setLatestPacket(packet);
 });
 
 export default function TelemetryPanel({ goBack }: Props) {
