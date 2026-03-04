@@ -1,6 +1,6 @@
 use serde::Serialize;
 use sirin_shared::{packet::{OutPacket, RadioPacket}, song::{FromSong, SongSize, ToSong}, state::NominalState};
-use tauri::{AppHandle, Listener, ipc::Channel};
+use tauri::{AppHandle, Listener, ipc::Channel, Manager, Emitter};
 use futures_util::StreamExt;
 use tokio_tungstenite::{connect_async, tungstenite::{connect, protocol::Message}};
 use std::process::Command;
@@ -21,9 +21,9 @@ pub struct LoraPacketRx {
 
 #[tauri::command]
 async fn listen_to_lora(
-    app: AppHandle,
-    on_lora_conn_msg: Channel<LoraConnMsg>,
-    on_packet: Channel<LoraPacketRx>
+    app: tauri::AppHandle,
+    on_lora_conn_msg: tauri::ipc::Channel<LoraConnMsg>,
+    on_packet: tauri::ipc::Channel<LoraPacketRx>,
 ) {
     let (mut stream, response) = match connect_async("ws://localhost:8765").await {
         Ok(ws) => ws,
@@ -54,8 +54,10 @@ async fn listen_to_lora(
 
         let packet = RadioPacket::<OutPacket>::from_song(&data).unwrap();
         let _ = on_packet.send(LoraPacketRx {
-            packet: serde_json::to_value(packet).unwrap()
+            packet: serde_json::to_value(packet.clone()).unwrap()
         });
+
+        app.emit("lora-packet", LoraPacketRx {packet: serde_json::to_value(packet).unwrap()}).unwrap();
     }
 
     let _ = on_lora_conn_msg.send(LoraConnMsg::SocketClosed);
