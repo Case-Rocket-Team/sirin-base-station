@@ -15,8 +15,6 @@ target/
 *.pdb
 
 .venv
-venv
-__pycache__
 
 # Added by cargo
 
