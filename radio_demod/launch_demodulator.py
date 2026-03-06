@@ -4,7 +4,6 @@ import os
 import argparse
 import json
 import signal
-import subprocess
 import threading
 import time
 from datetime import datetime
@@ -33,8 +32,8 @@ def watchdog(target, config, name, stop_event):
             p.join(timeout=1)
         if p.exitcode == 0 or stop_event.is_set():
             break
-        print(f"[{name}] exited with code {p.exitcode}, restarting in 2s...")
-        stop_event.wait(2)
+        print(f"[{name}] exited with code {p.exitcode}, restarting.")
+        stop_event.wait(1)
 
 
 def start_watchdogs(demodulators):
@@ -51,7 +50,7 @@ def start_watchdogs(demodulators):
         threads.append(t)
 
     def _sig_handler(sig, frame):
-        print("\nShutting down...")
+        print("\nShutting down.")
         stop_event.set()
 
     signal.signal(signal.SIGINT, _sig_handler)
@@ -129,12 +128,12 @@ def launch_from_config(config_data):
 
 
 def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("-l", "--lora",    help="Launch LoRa demodulator with default settings",    action='store_true')
-    ap.add_argument("-t", "--telegps", help="Launch TeleGPS demodulator with default settings", action='store_true')
-    ap.add_argument("-c", "--config",  help="Launch using config file (default: demodulator_config.json)",
+    arg_parser = argparse.ArgumentParser()
+    arg_parser.add_argument("-l", "--lora",    help="Launch LoRa demodulator with default settings",    action='store_true')
+    arg_parser.add_argument("-t", "--telegps", help="Launch TeleGPS demodulator with default settings", action='store_true')
+    arg_parser.add_argument("-c", "--config",  help="Launch using config file (default: demodulator_config.json)",
                     type=str, nargs='?', const='demodulator_config.json')
-    args = ap.parse_args()
+    args = arg_parser.parse_args()
 
     if args.config:
         if args.lora or args.telegps:
@@ -162,7 +161,7 @@ def main():
         ])
 
     else:
-        ap.print_help()
+        arg_parser.print_help()
         sys.exit(1)
 
 

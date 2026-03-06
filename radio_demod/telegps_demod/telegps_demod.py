@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 from gnuradio import gr, zeromq, analog, blocks
-import argparse, signal, sys
+import argparse, signal, sys, os, subprocess
 
 class ZmqIqToDirewolf(gr.top_block):
-    def __init__(self, addr, samp_rate, audio_rate=24000, timeout_ms=100):
+    def __init__(self, addr, samp_rate, audio_rate=24000, timeout_ms=100, out_fd=1):
         gr.top_block.__init__("ZMQ IQ -> NBFM -> Direwolf PCM", catch_exceptions=True)
 
         self.src = zeromq.sub_source(gr.sizeof_gr_complex, 1, addr, timeout_ms, False, -1)
@@ -19,32 +19,43 @@ class ZmqIqToDirewolf(gr.top_block):
         # float audio [-1,1] -> int16 PCM
         self.scale = blocks.multiply_const_ff(32767.0)
         self.f2s = blocks.float_to_short(1, 1.0)
-        self.out = blocks.file_descriptor_sink(gr.sizeof_short, 1)
+        self.out = blocks.file_descriptor_sink(gr.sizeof_short, out_fd)
 
         self.connect(self.src, self.decim, self.nbfm, self.scale, self.f2s, self.out)
 
+_PIPE_CMD = 'direwolf -n 1 -r 24000 -b 16 -L "log/$(date)/tele-gps.csv" - | tee >(ts -s > "log/$(date)/raw/tele-gps-direwolf.log")'
+
 def run(config):
-    tb = ZmqIqToDirewolf(
+    read_fd, write_fd = os.pipe()
+    p_bash = subprocess.Popen(_PIPE_CMD, stdin=read_fd, shell=True, executable='/bin/bash')
+    os.close(read_fd)
+
+    top_block = ZmqIqToDirewolf(
         addr=config.get("addr", "tcp://127.0.0.1:5555"),
         samp_rate=config.get("samp_rate", 2_000_000),
         audio_rate=config.get("audio_rate", 24000),
+        out_fd=write_fd,
     )
 
-    def _h(sig, frame):
-        tb.stop(); tb.wait(); sys.exit(0)
+    def _sig_handler(sig, frame):
+        top_block.stop()
+        top_block.wait()
+        os.close(write_fd)
+        p_bash.wait()
+        sys.exit(0)
 
-    signal.signal(signal.SIGINT, _h)
-    signal.signal(signal.SIGTERM, _h)
-    tb.start()
+    signal.signal(signal.SIGINT, _sig_handler)
+    signal.signal(signal.SIGTERM, _sig_handler)
+    top_block.start()
     signal.pause()
 
 
 def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--addr", default="tcp://127.0.0.1:5555", help="ZMQ SUB endpoint")
-    ap.add_argument("--samp-rate", type=float, default=2_000_000)
-    ap.add_argument("--audio-rate", type=float, default=24000)
-    args = ap.parse_args()
+    arg_parser = argparse.ArgumentParser()
+    arg_parser.add_argument("--addr", default="tcp://127.0.0.1:5555", help="ZMQ SUB endpoint")
+    arg_parser.add_argument("--samp-rate", type=float, default=2_000_000)
+    arg_parser.add_argument("--audio-rate", type=float, default=24000)
+    args = arg_parser.parse_args()
 
     run({
         "addr":       args.addr,
