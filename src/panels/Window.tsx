@@ -2,27 +2,27 @@ import React from "react";
 
 type Props = {
   children: React.ReactNode;
-  width?: number;
-  height?: number;
-  x?: number;
-  y?: number;
+  width?: number;   // % of viewport width
+  height?: number;  // % of viewport height
+  x?: number;       // % from left
+  y?: number;       // % from top
 };
 
 export default function Window({
   children,
-  width = 300,
-  height = 200,
-  x = 50,
-  y = 50,
+  width = 20,
+  height = 30,
+  x = 5,
+  y = 10,
 }: Props) {
   return (
     <div
       style={{
         position: "absolute",
-        left: x,
-        top: y,
-        width,
-        height,
+        left: `${x}vw`,
+        top: `${y}vh`,
+        width: `${width}vw`,
+        height: `${height}vh`,
       }}
     >
       {children}

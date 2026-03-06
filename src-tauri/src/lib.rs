@@ -71,10 +71,10 @@ pub fn run() {
 }
 
 pub fn run_lora_demod() {
-    Command::new("python3") // or "python" on Windows
-        .arg("../lora_demod/lora_demod.sh")
-        .spawn()
-        .expect("Failed to start lora_demod.sh");
+    Command::new("sh")
+        .arg("-c")
+        .arg("cd ../lora_demod && ./lora_demod.sh")
+        .spawn();
 }
 
 #[tauri::command]
