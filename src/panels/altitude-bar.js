@@ -1,6 +1,6 @@
 // altitude-bar.js
 
-export function createAltitudeBar(containerId, rocketImagePath = "./images/RealRocket.png") {
+export function createAltitudeBar(containerId, rocketImagePath = "./images/RealRocket.jpg") {
   const container = document.getElementById(containerId);
   if (!container) {
     console.error(`Container with id "${containerId}" not found`);
@@ -11,7 +11,7 @@ export function createAltitudeBar(containerId, rocketImagePath = "./images/RealR
   container.innerHTML = `
     <div class="altitude-container">
       <div class="bar-fill"></div>
-      <img src="./images/RealRocket.png" alt="Rocket" class="rocket">
+      <img src="./images/RealRocket.jpg" alt="Rocket" class="rocket">
       <div class="marker" style="bottom: 30%;">10k ft</div>
       <div class="marker" style="bottom: 60%;">20k ft</div>
       <div class="marker" style="bottom: 90%;">30k ft</div>
@@ -26,7 +26,6 @@ export function createAltitudeBar(containerId, rocketImagePath = "./images/RealR
       width: 60px;
       height: 100%; /* fill parent dynamically */
       background: #424040;
-      border-radius: 10px;
       border: 2px solid #000000;
       display: flex;
       flex-direction: column-reverse;
@@ -56,7 +55,6 @@ export function createAltitudeBar(containerId, rocketImagePath = "./images/RealR
       bottom: 0;
       width: 100%;
       background: linear-gradient(to top, #ae0900, #decc02);
-      border-radius: 10px;
     }
   `;
   document.head.appendChild(style);
