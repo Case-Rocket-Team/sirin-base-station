@@ -12,18 +12,26 @@ type Props = {
   goBack: () => void;
 };
 
+// Module-level flag — persists across remounts, prevents double USB claim
+let listeningStarted = false;
+
 export default function TelemetryPanel({ goBack }: Props) {
-  const [hackrfConnected, setHackrfConnected] = useState<boolean | null>(null); // ← moved inside
-  
+  const [hackrfConnected, setHackrfConnected] = useState<boolean | null>(null);
+  const [usbConnected, setUsbConnected] = useState<boolean | null>(null);
+  const [packetRate, setPacketRate] = useState<number>(0);
+
   useEffect(() => {
+    listeningStarted = false;
     const bar = createTelemetryBar("telemetry-bar-container", { title: "SIRIN BASE STATION" });
     const updateAltitude = createAltitudeBar("altitude-bar-container");
     let updateOrientation: ((data: any) => void) | null = null;
+    let packetCount = 0;
 
     createRocketOrientation("rocket-orientation-container").then((fn: any) => {
       updateOrientation = fn;
     });
 
+    // Checks if the HackRF or a USB sirin are connected every 2 seconds
     const poll = async () => {
       try {
         const connected = await invoke<boolean>("check_hackrf");
@@ -31,18 +39,30 @@ export default function TelemetryPanel({ goBack }: Props) {
       } catch (e) {
         setHackrfConnected(false);
       }
+      try {
+        const usb = await invoke<boolean>("check_usb");
+        setUsbConnected(usb);
+      } catch (e) {
+        setUsbConnected(false);
+      }
     };
-
     poll();
     const interval = setInterval(poll, 2000);
 
+    // Packet rate counter — resets every second
+    const rateInterval = setInterval(() => {
+      setPacketRate(packetCount);
+      packetCount = 0;
+    }, 1000);
+
     const onPacket = new Channel();
     onPacket.onmessage = (msg: any) => {
+      console.log("RAW PACKET:", JSON.stringify(msg, null, 2));
+      packetCount++;
       const logEntry = msg.packet?.packet?.LogEntry;
       if (!logEntry?.log?.Data) return;
 
       const data = logEntry.log.Data;
-
       let accelG = null;
       if (data.imu.accel.Ok) {
         const { x, y, z } = data.imu.accel.Ok;
@@ -54,8 +74,8 @@ export default function TelemetryPanel({ goBack }: Props) {
 
       if (updateOrientation) {
         updateOrientation({
-          accel: data.imu.accel.Ok,
-          mag:   data.magnetometer.mag.Ok,
+          accel: data.imu.accel.Ok,        // { x, y, z } in MicroGs — for init
+          gyro:  data.imu.angular_vel.Ok,  // { x, y, z } in microDeg/s — for integration
         });
       }
     };
@@ -65,14 +85,41 @@ export default function TelemetryPanel({ goBack }: Props) {
       console.log("LoRa connection status:", msg);
     };
 
-    invoke("listen_to_lora", {
-      onLoraConnMsg: onConnMsg,
-      onPacket: onPacket,
-    });
+    const onUsbMsg = new Channel();
+    onUsbMsg.onmessage = (msg: any) => {
+      console.log("USB connection status:", msg);
+    };
+
+    // Auto-detect: try USB first, fall back to LoRa
+    // Uses module-level listeningStarted to survive remounts
+    const startListening = async () => {
+      if (listeningStarted) return;
+      listeningStarted = true;
+
+      try {
+        const usbAvailable = await invoke<boolean>("check_usb");
+        if (usbAvailable) {
+          console.log("Sirin USB detected — using USB.");
+          invoke("listen_to_usb", { onUsbConnMsg: onUsbMsg, onPacket });
+        } else {
+          console.log("No USB device — falling back to LoRa.");
+          invoke("listen_to_lora", { onLoraConnMsg: onConnMsg, onPacket });
+        }
+      } catch (e) {
+        console.error("Failed to start listening:", e);
+        listeningStarted = false; // reset on error so it can retry
+        invoke("listen_to_lora", { onLoraConnMsg: onConnMsg, onPacket });
+      }
+    };
+
+    startListening();
 
     return () => {
       clearInterval(interval);
+      clearInterval(rateInterval);
       bar.remove();
+      // Intentionally NOT resetting listeningStarted —
+      // navigating back and forth won't re-claim the interface
     };
   }, []);
 
@@ -84,36 +131,83 @@ export default function TelemetryPanel({ goBack }: Props) {
       >
         ← Back
       </button>
-      <div className={`absolute top-4 right-4 px-3 py-1 rounded text-sm font-mono
-        ${hackrfConnected === null ? "bg-gray-300 text-gray-700" :
-          hackrfConnected ? "bg-green-500 text-white" : "bg-red-500 text-white"}`}>
-        {hackrfConnected === null ? "Checking HackRF..." :
-         hackrfConnected ? "● HackRF Connected" : "● HackRF Not Found"}
+
+      <div className="absolute top-4 right-4 flex flex-col gap-1">
+        {/* HackRF status */}
+        <div className={`px-3 py-1 rounded text-sm font-mono
+          ${hackrfConnected === null ? "bg-gray-300 text-gray-700" :
+            hackrfConnected ? "bg-green-500 text-white" : "bg-red-500 text-white"}`}>
+          {hackrfConnected === null ? "Checking HackRF..." :
+           hackrfConnected ? "● HackRF Connected" : "● HackRF Not Found"}
+        </div>
+
+        {/* Packet rate sub-status — only show when HackRF is connected */}
+        {hackrfConnected && (
+          <div className={`px-2 py-0.5 rounded text-xs font-mono text-center
+            ${packetRate >= 4 ? "bg-green-900 text-green-300" :
+              packetRate > 0  ? "bg-yellow-900 text-yellow-300" :
+                                "bg-red-900 text-red-300"}`}>
+            {packetRate >= 4
+              ? `▲ ${packetRate}/s — Good signal`
+              : packetRate > 0
+              ? `▲ ${packetRate}/s — Weak signal`
+              : `✕ 0/s — No packets`}
+          </div>
+        )}
+
+        {/* USB status */}
+        <div className={`px-3 py-1 rounded text-sm font-mono
+          ${usbConnected === null ? "bg-gray-300 text-gray-700" :
+            usbConnected ? "bg-green-500 text-white" : "bg-red-500 text-white"}`}>
+          {usbConnected === null ? "Checking USB..." :
+           usbConnected ? "● Sirin Connected" : "● Sirin Not Found"}
+        </div>
       </div>
 
-      <Window x={5}  y={10} width={10}  height={70}>
+      <Window x={5} y={10} width={10} height={70}>
         <div id="altitude-bar-container" className="h-full w-full"></div>
       </Window>
 
-      <Window x={75} y={50} width={20}  height={40}>
+      <Window x={75} y={50} width={20} height={40}>
         <div className="h-full flex items-center justify-center text-gray-400">
+          {/*
           <img src="./images/Dhruv.jpg" style={{ width: "100%", height: "100%", objectFit: "fill" }} />
+           */}
         </div>
       </Window>
 
-      <Window x={30} y={45} width={40} height={40}>
+      <Window x={40} y={45} width={30} height={30}>
         <div className="h-full flex items-center justify-center text-gray-400">
+          {/*
           <img src="./images/Dhruv.jpg" style={{ width: "100%", height: "100%", objectFit: "fill" }} />
+        */}
         </div>
       </Window>
 
-      <Window x={30} y={5} width={40} height={40}>
+      <Window x={20} y={5} width={60} height={60}>
         <div id="rocket-orientation-container" className="h-full w-full" />
       </Window>
 
-      <Window x={80} y={5}  width={20}  height={30}>
-        <div className="h-full flex items-center justify-center text-gray-400">
-          <img src="./images/CRT.jpg" style={{ width: "100%", height: "100%", objectFit: "fill" }} />
+      <Window x={80} y={15} width={15} height={20}>
+        <div className="h-full flex items-center justify-center">
+          <div style={{
+            borderRadius: "50%",
+            border: "4px solid #00d5ed",
+            padding: "4px",
+            display: "inline-flex",
+            boxShadow: "0 0 12px rgba(0,229,255,0.4)",
+          }}>
+            <img
+              src="./images/CRT.jpg"
+              style={{
+                width: "100%",
+                height: "100%",
+                objectFit: "cover",
+                borderRadius: "50%",
+                display: "block",
+              }}
+            />
+          </div>
         </div>
       </Window>
 

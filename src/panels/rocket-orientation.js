@@ -1,12 +1,20 @@
 // rocket-orientation.js
-// Displays a 3D rocket orientation based on magnetometer + accelerometer data.
-// Uses Three.js + GLTFLoader (both loaded from CDN if not already present).
+// Displays a 3D rocket orientation using quaternion data from the flight computer.
+//
+// Primary mode:  quaternion (r, x, y, z) from the Kalman filter on the firmware
+// Fallback mode: gyroscope integration (angular_vel) if no quaternion available
 //
 // Usage:
 //   const updateOrientation = await createRocketOrientation("my-container-id");
-//   updateOrientation({ mag: { x, y, z }, accel: { x, y, z } });
 //
-// Place your rocket GLB file at: /models/rocket.glb  (inside your /public folder)
+//   // Best — pass quaternion directly from NominalState:
+//   updateOrientation({ quat: { r, x, y, z } });
+//
+//   // Fallback — pass gyro angular velocity (microDeg/s) + dt in seconds:
+//   updateOrientation({ gyro: { x, y, z }, dt: 0.1 });
+//
+//   // Also accepts raw accel for gravity alignment on init:
+//   updateOrientation({ accel: { x, y, z } });
 
 export async function createRocketOrientation(containerId) {
   const container = document.getElementById(containerId);
@@ -34,7 +42,7 @@ export async function createRocketOrientation(containerId) {
         border-radius: 50%;
         border: 3px solid #000;
         overflow: hidden;
-        background: #e8edf2;
+        background: #b0b0b0;
         box-shadow: inset 0 2px 10px rgba(0,0,0,0.18), 0 3px 10px rgba(0,0,0,0.25);
       }
       .orient-canvas {
@@ -77,7 +85,7 @@ export async function createRocketOrientation(containerId) {
 
   // ── Renderer ──────────────────────────────────────────────────────────────────
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false });
-  renderer.setClearColor(0xe8edf2, 1);
+  renderer.setClearColor(0x1a1a2e, 1);
   renderer.setPixelRatio(window.devicePixelRatio);
   renderer.shadowMap.enabled = true;
 
@@ -97,12 +105,10 @@ export async function createRocketOrientation(containerId) {
 
   // ── Lighting ──────────────────────────────────────────────────────────────────
   scene.add(new THREE.AmbientLight(0xffffff, 0.65));
-
   const sun = new THREE.DirectionalLight(0xffffff, 0.9);
   sun.position.set(3, 5, 4);
   sun.castShadow = true;
   scene.add(sun);
-
   const fill = new THREE.DirectionalLight(0xaaccff, 0.3);
   fill.position.set(-2, 1, -2);
   scene.add(fill);
@@ -122,7 +128,7 @@ export async function createRocketOrientation(containerId) {
       } else if (plane === "XZ") {
         pts.push(t, 0, 0,   t, 0, GRID_SIZE);
         pts.push(0, 0, t,   GRID_SIZE, 0, t);
-      } else { // YZ
+      } else {
         pts.push(0, t, 0,   0, t, GRID_SIZE);
         pts.push(0, 0, t,   0, GRID_SIZE, t);
       }
@@ -133,9 +139,9 @@ export async function createRocketOrientation(containerId) {
     return new THREE.LineSegments(geo, mat);
   }
 
-  scene.add(buildGrid("XY", 0x7aabcc));
-  scene.add(buildGrid("XZ", 0x7aabcc));
-  scene.add(buildGrid("YZ", 0x7aabcc));
+  scene.add(buildGrid("XY", 0x00e5ff));
+  scene.add(buildGrid("XZ", 0x00e5ff));
+  scene.add(buildGrid("YZ", 0x00e5ff));
 
   // ── Axis lines ────────────────────────────────────────────────────────────────
   function makeAxisLine(to, color) {
@@ -145,59 +151,41 @@ export async function createRocketOrientation(containerId) {
     ]);
     return new THREE.Line(geo, new THREE.LineBasicMaterial({ color }));
   }
-  scene.add(makeAxisLine([1.15, 0, 0], 0xcc2222)); // X - red
-  scene.add(makeAxisLine([0, 1.15, 0], 0x22aa44)); // Y - green
-  scene.add(makeAxisLine([0, 0, 1.15], 0x2255cc)); // Z - blue
+  scene.add(makeAxisLine([1.15, 0, 0], 0xcc2222));
+  scene.add(makeAxisLine([0, 1.15, 0], 0x22aa44));
+  scene.add(makeAxisLine([0, 0, 1.15], 0x2255cc));
 
-  // ── Rocket group (orientation is applied to this) ─────────────────────────────
+  // ── Rocket group ──────────────────────────────────────────────────────────────
   const rocketGroup = new THREE.Group();
   rocketGroup.position.set(0.5, 0.3, 0.5);
   scene.add(rocketGroup);
 
-  // ── Load GLTF rocket model ────────────────────────────────────────────────────
+  // ── Load GLTF model, fallback to primitives ───────────────────────────────────
   const loader = new THREE.GLTFLoader();
   loader.load(
-    "/models/Starship.glb",          // ← put your GLB at public/models/rocket.glb
+    "/models/Aurora.glb",
     (gltf) => {
       const model = gltf.scene;
-
-      // Auto-scale to a consistent size regardless of source model dimensions
       const box = new THREE.Box3().setFromObject(model);
       const size = new THREE.Vector3();
       box.getSize(size);
       const maxDim = Math.max(size.x, size.y, size.z);
       model.scale.setScalar(1.2 / maxDim);
-
-      // Center the model at the group's origin
       box.setFromObject(model);
       const center = new THREE.Vector3();
       box.getCenter(center);
       model.position.sub(center);
-
-      // If your model's nose points along Z or X instead of Y, adjust here:
-      // model.rotation.x = -Math.PI / 2;  // if nose points along -Z
-      // model.rotation.z = Math.PI / 2;   // if nose points along X
-
       model.traverse((child) => {
         if (child.isMesh) {
           child.castShadow = true;
           child.receiveShadow = true;
         }
       });
-
       rocketGroup.add(model);
-      console.log("Rocket model loaded successfully.");
     },
-    (progress) => {
-      if (progress.total > 0) {
-        console.log(`Loading rocket: ${Math.round(progress.loaded / progress.total * 100)}%`);
-      }
-    },
-    (err) => {
-      console.error("Failed to load rocket GLB:", err);
-      console.warn("Falling back to primitive rocket model.");
-
-      // ── Fallback: primitive rocket if GLB fails to load ─────────────────────
+    undefined,
+    () => {
+      // Fallback primitive rocket
       const bodyMat = new THREE.MeshPhongMaterial({ color: 0x4fc3f7, shininess: 90 });
       const body = new THREE.Mesh(new THREE.CylinderGeometry(0.042, 0.052, 0.36, 20), bodyMat);
       body.position.y = 0.18;
@@ -210,8 +198,7 @@ export async function createRocketOrientation(containerId) {
 
       const bellMat = new THREE.MeshPhongMaterial({ color: 0x78909c, shininess: 60 });
       const bell = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.038, 0.055, 0.06, 16, 1, true),
-        bellMat
+        new THREE.CylinderGeometry(0.038, 0.055, 0.06, 16, 1, true), bellMat
       );
       bell.position.y = -0.03;
       rocketGroup.add(bell);
@@ -219,10 +206,10 @@ export async function createRocketOrientation(containerId) {
       const finMat = new THREE.MeshPhongMaterial({ color: 0x0277bd, side: THREE.DoubleSide });
       for (let i = 0; i < 4; i++) {
         const shape = new THREE.Shape();
-        shape.moveTo(0,     0);
+        shape.moveTo(0, 0);
         shape.lineTo(0.11, -0.07);
-        shape.lineTo(0.09,  0.13);
-        shape.lineTo(0,     0.09);
+        shape.lineTo(0.09, 0.13);
+        shape.lineTo(0, 0.09);
         const fin = new THREE.Mesh(new THREE.ShapeGeometry(shape), finMat);
         const angle = (i * Math.PI) / 2;
         fin.rotation.y = angle;
@@ -241,25 +228,112 @@ export async function createRocketOrientation(containerId) {
     renderer.render(scene, camera);
   })();
 
-  // ── Orientation logic ─────────────────────────────────────────────────────────
-  // Same tilt-compensated approach as the Python reference script:
-  // accel defines the "up" (gravity) vector, mag defines heading.
-  let accelVec = new THREE.Vector3(0, 1, 0);
-  let magVec   = new THREE.Vector3(1, 0, 0);
+  // ── Quaternion state ──────────────────────────────────────────────────────────
+  // Matches the firmware's NominalState quaternion: (r=w, x, y, z)
+  // Initialized to identity (no rotation)
+  let quatR = 1, quatX = 0, quatY = 0, quatZ = 0;
 
-  function applyOrientation() {
-    const up    = accelVec.clone().normalize();
-    const east  = new THREE.Vector3().crossVectors(magVec.clone().normalize(), up).normalize();
-    const north = new THREE.Vector3().crossVectors(up, east).normalize();
-    rocketGroup.setRotationFromMatrix(new THREE.Matrix4().makeBasis(east, up, north));
+  // For gyro integration fallback
+  let lastGyroTime = null;
+
+  // ── Quaternion → rotation matrix (same as Python's quat_to_matrix) ────────────
+  function applyQuaternion(r, x, y, z) {
+    // Normalize
+    const n = Math.sqrt(r*r + x*x + y*y + z*z);
+    const w = r/n, qx = x/n, qy = y/n, qz = z/n;
+
+    // Build rotation matrix — identical to Python quat_to_matrix
+    const m = new THREE.Matrix4().set(
+      1 - 2*(qy*qy + qz*qz),     2*(qx*qy - qz*w),     2*(qx*qz + qy*w), 0,
+          2*(qx*qy + qz*w), 1 - 2*(qx*qx + qz*qz),     2*(qy*qz - qx*w), 0,
+          2*(qx*qz - qy*w),     2*(qy*qz + qx*w), 1 - 2*(qx*qx + qy*qy), 0,
+      0, 0, 0, 1
+    );
+
+    rocketGroup.setRotationFromMatrix(m);
+  }
+
+  // ── Gyro integration fallback ─────────────────────────────────────────────────
+  // Integrates angular velocity into the quaternion using first-order integration.
+  // angular_vel from firmware is in microDegrees/s
+  function integrateGyro(gx, gy, gz, dt) {
+    const MICRO_DEG_TO_RAD = Math.PI / 180.0 / 1e6;
+
+    // Convert to rad/s — note firmware negates pitch and yaw, match that
+    const wx = gx * MICRO_DEG_TO_RAD * -1.0; // pitch (negated in firmware)
+    const wy = gy * MICRO_DEG_TO_RAD;         // roll
+    const wz = gz * MICRO_DEG_TO_RAD * -1.0; // yaw (negated in firmware)
+
+    // Quaternion derivative: dq/dt = 0.5 * q * [0, wx, wy, wz]
+    const dqr = 0.5 * (-quatX*wx - quatY*wy - quatZ*wz);
+    const dqx = 0.5 * ( quatR*wx + quatY*wz - quatZ*wy);
+    const dqy = 0.5 * ( quatR*wy - quatX*wz + quatZ*wx);
+    const dqz = 0.5 * ( quatR*wz + quatX*wy - quatY*wx);
+
+    quatR += dqr * dt;
+    quatX += dqx * dt;
+    quatY += dqy * dt;
+    quatZ += dqz * dt;
+
+    // Normalize to prevent drift
+    const norm = Math.sqrt(quatR*quatR + quatX*quatX + quatY*quatY + quatZ*quatZ);
+    quatR /= norm; quatX /= norm; quatY /= norm; quatZ /= norm;
+
+    applyQuaternion(quatR, quatX, quatY, quatZ);
+  }
+
+  // ── Accel-based gravity alignment for initialization ──────────────────────────
+  // Used only on first reading to set an initial orientation before gyro takes over
+  let initialized = false;
+  function initFromAccel(ax, ay, az) {
+    const up = new THREE.Vector3(ax, ay, az).normalize();
+    const absX = Math.abs(up.x), absY = Math.abs(up.y), absZ = Math.abs(up.z);
+    let ref;
+    if (absX <= absY && absX <= absZ)      ref = new THREE.Vector3(1, 0, 0);
+    else if (absY <= absX && absY <= absZ) ref = new THREE.Vector3(0, 1, 0);
+    else                                   ref = new THREE.Vector3(0, 0, 1);
+
+    const right   = new THREE.Vector3().crossVectors(ref, up).normalize();
+    const forward = new THREE.Vector3().crossVectors(up, right).normalize();
+    const m = new THREE.Matrix4().makeBasis(right, up, forward);
+    rocketGroup.setRotationFromMatrix(m);
+
+    // Extract quaternion from the matrix for continuity with gyro integration
+    const q = new THREE.Quaternion().setFromRotationMatrix(m);
+    quatR = q.w; quatX = q.x; quatY = q.y; quatZ = q.z;
+    initialized = true;
   }
 
   // ── Public API ────────────────────────────────────────────────────────────────
-  // Call with: { mag: {x,y,z}, accel: {x,y,z} }
-  // Both are optional — pass whichever you have available each frame.
-  return function updateRocketOrientation({ mag, accel } = {}) {
-    if (accel) accelVec.set(accel.x, accel.y, accel.z);
-    if (mag)   magVec.set(mag.x, mag.y, mag.z);
-    applyOrientation();
+  // Priority: quat > gyro > accel
+  //
+  // From TelemetryPanel, call with:
+  //   updateOrientation({ quat: logEntry.log.State.nominal.rotQuaternion })
+  // or with raw sensor data:
+  //   updateOrientation({ gyro: data.imu.angular_vel.Ok, accel: data.imu.accel.Ok })
+  return function updateRocketOrientation({ quat, gyro, accel } = {}) {
+
+    // Best case: direct quaternion from Kalman filter
+    if (quat) {
+      quatR = quat.r; quatX = quat.x; quatY = quat.y; quatZ = quat.z;
+      applyQuaternion(quatR, quatX, quatY, quatZ);
+      initialized = true;
+      return;
+    }
+
+    // Initialize orientation from accel on first reading
+    if (!initialized && accel) {
+      initFromAccel(accel.x / 1e6, accel.y / 1e6, accel.z / 1e6); // MicroGs → Gs
+    }
+
+    // Gyro integration
+    if (gyro) {
+      const now = performance.now();
+      if (lastGyroTime !== null) {
+        const dt = (now - lastGyroTime) / 1000.0; // ms → seconds
+        integrateGyro(gyro.x, gyro.y, gyro.z, dt);
+      }
+      lastGyroTime = now;
+    }
   };
 }
