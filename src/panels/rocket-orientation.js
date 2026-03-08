@@ -222,7 +222,7 @@ export async function createRocketOrientation(containerId) {
 
   resize();
 
-  // ── Render loop ───────────────────────────────────────────────────────────────
+  // ── Render loop ─────────────────f──────────────────────────────────────────────
   (function animate() {
     requestAnimationFrame(animate);
     renderer.render(scene, camera);
@@ -257,11 +257,12 @@ export async function createRocketOrientation(containerId) {
   // Integrates angular velocity into the quaternion using first-order integration.
   // angular_vel from firmware is in microDegrees/s
   function integrateGyro(gx, gy, gz, dt) {
+    //console.log("integrateGyro called:", gx, gy, gz, dt);
     const MICRO_DEG_TO_RAD = Math.PI / 180.0 / 1e6;
 
     // Convert to rad/s — note firmware negates pitch and yaw, match that
     const wx = gx * MICRO_DEG_TO_RAD * -1.0; // pitch (negated in firmware)
-    const wy = gy * MICRO_DEG_TO_RAD;         // roll
+    const wy = gy * MICRO_DEG_TO_RAD * -1.0; // roll
     const wz = gz * MICRO_DEG_TO_RAD * -1.0; // yaw (negated in firmware)
 
     // Quaternion derivative: dq/dt = 0.5 * q * [0, wx, wy, wz]
@@ -286,6 +287,7 @@ export async function createRocketOrientation(containerId) {
   // Used only on first reading to set an initial orientation before gyro takes over
   let initialized = false;
   function initFromAccel(ax, ay, az) {
+    //console.log("initFromAccel called:", ax, ay, az);
     const up = new THREE.Vector3(ax, ay, az).normalize();
     const absX = Math.abs(up.x), absY = Math.abs(up.y), absZ = Math.abs(up.z);
     let ref;

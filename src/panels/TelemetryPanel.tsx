@@ -22,6 +22,11 @@ export default function TelemetryPanel({ goBack }: Props) {
 
   useEffect(() => {
     listeningStarted = false;
+
+    // Cache latest of each packet type independently
+    let lastData: any = null;
+    let lastState: any = null;
+
     const bar = createTelemetryBar("telemetry-bar-container", { title: "SIRIN BASE STATION" });
     const updateAltitude = createAltitudeBar("altitude-bar-container");
     let updateOrientation: ((data: any) => void) | null = null;
@@ -57,26 +62,57 @@ export default function TelemetryPanel({ goBack }: Props) {
 
     const onPacket = new Channel();
     onPacket.onmessage = (msg: any) => {
-      console.log("RAW PACKET:", JSON.stringify(msg, null, 2));
       packetCount++;
       const logEntry = msg.packet?.packet?.LogEntry;
-      if (!logEntry?.log?.Data) return;
+      if (!logEntry) return;
 
-      const data = logEntry.log.Data;
-      let accelG = null;
-      if (data.imu.accel.Ok) {
-        const { x, y, z } = data.imu.accel.Ok;
-        accelG = Math.sqrt(x*x + y*y + z*z) / 1_000_000;
+      // Cache whichever type just arrived
+      if (logEntry.log?.Data){
+        lastData  = logEntry.log.Data;
+        //console.log("DATA PACKET:", JSON.stringify(msg, null, 2));
+      }
+      if (logEntry.log?.State){
+        lastState = logEntry.log.State;
+        //console.log("STATE PACKET:", JSON.stringify(msg, null, 2));
       }
 
-      bar.update({ altitude: data.altitude, acceleration: accelG });
-      updateAltitude(data.altitude);
+      // Update altitude/accel from latest Data
+      if (lastData) {
+        let accelG = null;
+        if (lastData.imu.accel.Ok) {
+          const { x, y, z } = lastData.imu.accel.Ok;
+          accelG = Math.sqrt(x*x + y*y + z*z) / 1_000_000;
+        }
+        bar.update({ altitude: lastData.altitude, acceleration: accelG });
+        updateAltitude(lastData.altitude);
+      }
 
+      // Update orientation from latest State 
       if (updateOrientation) {
-        updateOrientation({
-          accel: data.imu.accel.Ok,        // { x, y, z } in MicroGs — for init
-          gyro:  data.imu.angular_vel.Ok,  // { x, y, z } in microDeg/s — for integration
-        });
+        const quat = lastState?.nominal?.rotQuaternion;
+
+        // Validate quaternion has real values before using it
+        const quatValid = quat &&
+          typeof quat.r === "number" && isFinite(quat.r) &&
+          typeof quat.x === "number" && isFinite(quat.x) &&
+          typeof quat.y === "number" && isFinite(quat.y) &&
+          typeof quat.z === "number" && isFinite(quat.z) &&
+          (quat.r !== 0 || quat.x !== 0 || quat.y !== 0 || quat.z !== 0); // not all zero
+
+        //console.log("Calling updateOrientation with:", { quatValid, quat, hasLastData: !!lastData });
+
+        console.log("lastData:", !!lastData, "lastState:", !!lastState);
+        console.log("accel:", lastData?.imu?.accel?.Ok);
+        console.log("gyro:", lastData?.imu?.angular_vel?.Ok);
+
+        if (quatValid) {
+          updateOrientation({ quat });
+        } else if (lastData) {
+          updateOrientation({
+            accel: lastData.imu.accel.Ok,
+            gyro:  lastData.imu.angular_vel.Ok,
+          });
+        }
       }
     };
 
@@ -91,7 +127,6 @@ export default function TelemetryPanel({ goBack }: Props) {
     };
 
     // Auto-detect: try USB first, fall back to LoRa
-    // Uses module-level listeningStarted to survive remounts
     const startListening = async () => {
       if (listeningStarted) return;
       listeningStarted = true;
@@ -107,7 +142,7 @@ export default function TelemetryPanel({ goBack }: Props) {
         }
       } catch (e) {
         console.error("Failed to start listening:", e);
-        listeningStarted = false; // reset on error so it can retry
+        listeningStarted = false;
         invoke("listen_to_lora", { onLoraConnMsg: onConnMsg, onPacket });
       }
     };
@@ -118,8 +153,6 @@ export default function TelemetryPanel({ goBack }: Props) {
       clearInterval(interval);
       clearInterval(rateInterval);
       bar.remove();
-      // Intentionally NOT resetting listeningStarted —
-      // navigating back and forth won't re-claim the interface
     };
   }, []);
 
@@ -172,7 +205,7 @@ export default function TelemetryPanel({ goBack }: Props) {
         <div className="h-full flex items-center justify-center text-gray-400">
           {/*
           <img src="./images/Dhruv.jpg" style={{ width: "100%", height: "100%", objectFit: "fill" }} />
-           */}
+          */}
         </div>
       </Window>
 
@@ -180,7 +213,7 @@ export default function TelemetryPanel({ goBack }: Props) {
         <div className="h-full flex items-center justify-center text-gray-400">
           {/*
           <img src="./images/Dhruv.jpg" style={{ width: "100%", height: "100%", objectFit: "fill" }} />
-        */}
+          */}
         </div>
       </Window>
 
