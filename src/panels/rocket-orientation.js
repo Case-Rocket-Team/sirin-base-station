@@ -280,7 +280,7 @@ export async function createRocketOrientation(containerId) {
     const norm = Math.sqrt(quatR*quatR + quatX*quatX + quatY*quatY + quatZ*quatZ);
     quatR /= norm; quatX /= norm; quatY /= norm; quatZ /= norm;
 
-    applyQuaternion(quatR, quatX, quatY, quatZ);
+    applyQuaternion(quat.r, -quat.y, -quat.x, quat.z); //Might be totally wrong double check this
   }
 
   // ── Accel-based gravity alignment for initialization ──────────────────────────
@@ -318,7 +318,7 @@ export async function createRocketOrientation(containerId) {
     // Best case: direct quaternion from Kalman filter
     if (quat) {
       quatR = quat.r; quatX = quat.x; quatY = quat.y; quatZ = quat.z;
-      applyQuaternion(quatR, quatX, quatY, quatZ);
+      applyQuaternion(quatR, -quatX, quatY, quatZ);
       initialized = true;
       return;
     }

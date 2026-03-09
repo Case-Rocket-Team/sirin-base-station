@@ -7,6 +7,8 @@ import { createAltitudeBar } from "../panels/altitude-bar.js";
 import { createRocketOrientation } from "../panels/rocket-orientation.js";
 // @ts-ignore
 import { createTelemetryBar } from "../panels/telemetry-bar.js";
+// @ts-ignore
+import { createTelemetryStatus } from "../panels/telemetry-status.js";
 
 type Props = {
   goBack: () => void;
@@ -28,6 +30,7 @@ export default function TelemetryPanel({ goBack }: Props) {
     let lastState: any = null;
 
     const bar = createTelemetryBar("telemetry-bar-container", { title: "SIRIN BASE STATION" });
+    const status = createTelemetryStatus("telemetry-status-container");
     const updateAltitude = createAltitudeBar("altitude-bar-container");
     let updateOrientation: ((data: any) => void) | null = null;
     let packetCount = 0;
@@ -62,19 +65,14 @@ export default function TelemetryPanel({ goBack }: Props) {
 
     const onPacket = new Channel();
     onPacket.onmessage = (msg: any) => {
+      status.onPacket();
       packetCount++;
       const logEntry = msg.packet?.packet?.LogEntry;
       if (!logEntry) return;
 
       // Cache whichever type just arrived
-      if (logEntry.log?.Data){
-        lastData  = logEntry.log.Data;
-        //console.log("DATA PACKET:", JSON.stringify(msg, null, 2));
-      }
-      if (logEntry.log?.State){
-        lastState = logEntry.log.State;
-        //console.log("STATE PACKET:", JSON.stringify(msg, null, 2));
-      }
+      if (logEntry.log?.Data)  lastData  = logEntry.log.Data;
+      if (logEntry.log?.State) lastState = logEntry.log.State;
 
       // Update altitude/accel from latest Data
       if (lastData) {
@@ -83,27 +81,30 @@ export default function TelemetryPanel({ goBack }: Props) {
           const { x, y, z } = lastData.imu.accel.Ok;
           accelG = Math.sqrt(x*x + y*y + z*z) / 1_000_000;
         }
-        bar.update({ altitude: lastData.altitude, acceleration: accelG });
+        if (lastState) {
+          let velocityFtS = null;
+          if (lastState?.nominal?.vel) {
+            const { x, y, z } = lastState.nominal.vel;
+            const mps = Math.sqrt(x*x + y*y + z*z);
+            velocityFtS = mps * 3.28084;
+          }
+          bar.update({ velocity: velocityFtS, altitude: lastData.altitude, acceleration: accelG });
+        } else {
+          bar.update({ altitude: lastData.altitude, acceleration: accelG });
+        }
         updateAltitude(lastData.altitude);
       }
 
-      // Update orientation from latest State 
+      // Update orientation from latest State
       if (updateOrientation) {
-        const quat = lastState?.nominal?.rotQuaternion;
+        const quat = lastState?.nominal?.rot_quaternion;
 
-        // Validate quaternion has real values before using it
         const quatValid = quat &&
           typeof quat.r === "number" && isFinite(quat.r) &&
           typeof quat.x === "number" && isFinite(quat.x) &&
           typeof quat.y === "number" && isFinite(quat.y) &&
           typeof quat.z === "number" && isFinite(quat.z) &&
-          (quat.r !== 0 || quat.x !== 0 || quat.y !== 0 || quat.z !== 0); // not all zero
-
-        //console.log("Calling updateOrientation with:", { quatValid, quat, hasLastData: !!lastData });
-
-        console.log("lastData:", !!lastData, "lastState:", !!lastState);
-        console.log("accel:", lastData?.imu?.accel?.Ok);
-        console.log("gyro:", lastData?.imu?.angular_vel?.Ok);
+          (quat.r !== 0 || quat.x !== 0 || quat.y !== 0 || quat.z !== 0);
 
         if (quatValid) {
           updateOrientation({ quat });
@@ -123,10 +124,12 @@ export default function TelemetryPanel({ goBack }: Props) {
 
     const onUsbMsg = new Channel();
     onUsbMsg.onmessage = (msg: any) => {
+      // Just log — Rust handles reconnection internally in its retry loop
       console.log("USB connection status:", msg);
     };
 
     // Auto-detect: try USB first, fall back to LoRa
+    // Only ever called once per mount — Rust retries USB internally on disconnect
     const startListening = async () => {
       if (listeningStarted) return;
       listeningStarted = true;
@@ -153,6 +156,11 @@ export default function TelemetryPanel({ goBack }: Props) {
       clearInterval(interval);
       clearInterval(rateInterval);
       bar.remove();
+      status.remove();
+      // Tell Rust to stop the USB retry loop before we unmount —
+      // prevents the old loop from holding the interface when we re-enter
+      invoke("stop_usb").catch(() => {});
+      listeningStarted = false;
     };
   }, []);
 
@@ -203,17 +211,11 @@ export default function TelemetryPanel({ goBack }: Props) {
 
       <Window x={75} y={50} width={20} height={40}>
         <div className="h-full flex items-center justify-center text-gray-400">
-          {/*
-          <img src="./images/Dhruv.jpg" style={{ width: "100%", height: "100%", objectFit: "fill" }} />
-          */}
         </div>
       </Window>
 
       <Window x={40} y={45} width={30} height={30}>
         <div className="h-full flex items-center justify-center text-gray-400">
-          {/*
-          <img src="./images/Dhruv.jpg" style={{ width: "100%", height: "100%", objectFit: "fill" }} />
-          */}
         </div>
       </Window>
 
@@ -246,6 +248,10 @@ export default function TelemetryPanel({ goBack }: Props) {
 
       <Window x={0} y={90} width={100} height={10}>
         <div id="telemetry-bar-container" className="h-full w-full" />
+      </Window>
+
+      <Window x={85} y={50} width={10} height={35}>
+        <div id="telemetry-status-container" className="h-full w-full" />
       </Window>
     </main>
   );
