@@ -9,6 +9,8 @@ import { createRocketOrientation } from "../panels/rocket-orientation.js";
 import { createTelemetryBar } from "../panels/telemetry-bar.js";
 // @ts-ignore
 import { createTelemetryStatus } from "../panels/telemetry-status.js";
+// @ts-ignore
+import { createPositionTrace } from "../panels/position-trace.js";
 
 type Props = {
   goBack: () => void;
@@ -37,6 +39,11 @@ export default function TelemetryPanel({ goBack }: Props) {
 
     createRocketOrientation("rocket-orientation-container").then((fn: any) => {
       updateOrientation = fn;
+    });
+
+    let addTracePoint: ((pos: any) => void) | null = null;
+    createPositionTrace("position-trace-container").then((t: any) => {
+      addTracePoint = t.addPoint;
     });
 
     // Checks if the HackRF or a USB sirin are connected every 2 seconds
@@ -71,8 +78,19 @@ export default function TelemetryPanel({ goBack }: Props) {
       if (!logEntry) return;
 
       // Cache whichever type just arrived
-      if (logEntry.log?.Data)  lastData  = logEntry.log.Data;
-      if (logEntry.log?.State) lastState = logEntry.log.State;
+      if (logEntry.log?.Data){
+        lastData  = logEntry.log.Data;
+        console.log("DATA:", JSON.stringify(lastData, null, 2));
+      }
+      if (logEntry.log?.State){
+        lastState = logEntry.log.State;
+        console.log("STATE:", JSON.stringify(lastState, null, 2));
+      }
+
+      if (logEntry.log?.State && addTracePoint) {
+        const pos = logEntry.log.State.nominal?.pos;
+        if (pos) addTracePoint(pos);
+      }
 
       // Update altitude/accel from latest Data
       if (lastData) {
@@ -88,11 +106,11 @@ export default function TelemetryPanel({ goBack }: Props) {
             const mps = Math.sqrt(x*x + y*y + z*z);
             velocityFtS = mps * 3.28084;
           }
-          bar.update({ velocity: velocityFtS, altitude: lastData.altitude, acceleration: accelG });
-        } else {
+          updateAltitude(lastState.altitude);
+          bar.update({ velocity: velocityFtS, altitude: lastState.altitude, acceleration: accelG, mode: lastState.mode });
+        } /*else {
           bar.update({ altitude: lastData.altitude, acceleration: accelG });
-        }
-        updateAltitude(lastData.altitude);
+        }*/
       }
 
       // Update orientation from latest State
@@ -219,7 +237,7 @@ export default function TelemetryPanel({ goBack }: Props) {
         </div>
       </Window>
 
-      <Window x={20} y={5} width={60} height={60}>
+      <Window x={20} y={10} width={60} height={60}>
         <div id="rocket-orientation-container" className="h-full w-full" />
       </Window>
 
@@ -250,8 +268,12 @@ export default function TelemetryPanel({ goBack }: Props) {
         <div id="telemetry-bar-container" className="h-full w-full" />
       </Window>
 
-      <Window x={85} y={50} width={10} height={35}>
+      <Window x={15} y={10} width={10} height={35}>
         <div id="telemetry-status-container" className="h-full w-full" />
+      </Window>
+
+      <Window x={70} y={45} width={30} height={45}>
+        <div id="position-trace-container" className="h-full w-full" />
       </Window>
     </main>
   );
