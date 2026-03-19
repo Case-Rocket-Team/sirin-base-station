@@ -235,6 +235,8 @@ async fn listen_to_usb(
     }
 }
 
+
+//TODO: This says the hackRF is connected if port 8765 is opened by anything, not just the HackRF
 #[tauri::command]
 async fn check_hackrf() -> bool {
     match connect_async("ws://localhost:8765").await {
@@ -255,7 +257,7 @@ async fn check_usb() -> bool {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    run_lora_demod();
+    //run_lora_demod();
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
             listen_to_lora,

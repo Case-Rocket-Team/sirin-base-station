@@ -11,6 +11,8 @@ import { createTelemetryBar } from "../panels/telemetry-bar.js";
 import { createTelemetryStatus } from "../panels/telemetry-status.js";
 // @ts-ignore
 import { createPositionTrace } from "../panels/position-trace.js";
+// @ts-ignore
+import { createApogeePredictor } from "../panels/apogee-predictor.js";
 
 type Props = {
   goBack: () => void;
@@ -34,6 +36,7 @@ export default function TelemetryPanel({ goBack }: Props) {
     const bar = createTelemetryBar("telemetry-bar-container", { title: "SIRIN BASE STATION" });
     const status = createTelemetryStatus("telemetry-status-container");
     const updateAltitude = createAltitudeBar("altitude-bar-container");
+    const predictor = createApogeePredictor("apogee-predictor-container");
     let updateOrientation: ((data: any) => void) | null = null;
     let packetCount = 0;
 
@@ -73,6 +76,7 @@ export default function TelemetryPanel({ goBack }: Props) {
     const onPacket = new Channel();
     onPacket.onmessage = (msg: any) => {
       status.onPacket();
+      //Update packet counter
       packetCount++;
       const logEntry = msg.packet?.packet?.LogEntry;
       if (!logEntry) return;
@@ -87,6 +91,7 @@ export default function TelemetryPanel({ goBack }: Props) {
         console.log("STATE:", JSON.stringify(lastState, null, 2));
       }
 
+      //Add the first 3D position onto the map
       if (logEntry.log?.State && addTracePoint) {
         const pos = logEntry.log.State.nominal?.pos;
         if (pos) addTracePoint(pos);
@@ -100,8 +105,17 @@ export default function TelemetryPanel({ goBack }: Props) {
           accelG = Math.sqrt(x*x + y*y + z*z) / 1_000_000;
         }
         if (lastState) {
+          //Coutn satellites
+          status.onPacket(lastState?.gps_fix?.satellites ?? null);
           let velocityFtS = null;
           if (lastState?.nominal?.vel) {
+            //Predict apogee
+            predictor.update({
+              altitude: lastState.altitude,
+              velX:     lastState.nominal.vel.x,
+              apogee:   lastState.apogee,
+            });
+            //Calculate total velocity
             const { x, y, z } = lastState.nominal.vel;
             const mps = Math.sqrt(x*x + y*y + z*z);
             velocityFtS = mps * 3.28084;
@@ -142,12 +156,11 @@ export default function TelemetryPanel({ goBack }: Props) {
 
     const onUsbMsg = new Channel();
     onUsbMsg.onmessage = (msg: any) => {
-      // Just log — Rust handles reconnection internally in its retry loop
       console.log("USB connection status:", msg);
     };
 
     // Auto-detect: try USB first, fall back to LoRa
-    // Only ever called once per mount — Rust retries USB internally on disconnect
+    // Rust side retries connection when needed
     const startListening = async () => {
       if (listeningStarted) return;
       listeningStarted = true;
@@ -175,8 +188,7 @@ export default function TelemetryPanel({ goBack }: Props) {
       clearInterval(rateInterval);
       bar.remove();
       status.remove();
-      // Tell Rust to stop the USB retry loop before we unmount —
-      // prevents the old loop from holding the interface when we re-enter
+      predictor.remove();
       invoke("stop_usb").catch(() => {});
       listeningStarted = false;
     };
@@ -268,12 +280,16 @@ export default function TelemetryPanel({ goBack }: Props) {
         <div id="telemetry-bar-container" className="h-full w-full" />
       </Window>
 
-      <Window x={15} y={10} width={10} height={35}>
+      <Window x={15} y={25} width={10} height={40}>
         <div id="telemetry-status-container" className="h-full w-full" />
       </Window>
 
       <Window x={70} y={45} width={30} height={45}>
         <div id="position-trace-container" className="h-full w-full" />
+      </Window>
+
+      <Window x={15} y={10} width={20} height={10}>
+        <div id="apogee-predictor-container" className="h-full w-full" />
       </Window>
     </main>
   );

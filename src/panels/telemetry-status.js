@@ -127,6 +127,11 @@ export function createTelemetryStatus(containerId) {
       <span class="ts-label">Signal</span>
       <span class="ts-value" id="ts-signal">NO LINK</span>
     </div>
+
+    <div class="ts-row">
+      <span class="ts-label">Satellite Count</span>
+      <span class="ts-value" id="ts-satcount">0</span>
+    </div>
   `;
   container.appendChild(panel);
 
@@ -134,12 +139,14 @@ export function createTelemetryStatus(containerId) {
   const lastEl   = panel.querySelector("#ts-last");
   const totalEl  = panel.querySelector("#ts-total");
   const signalEl = panel.querySelector("#ts-signal");
+  const satcountEl = panel.querySelector("#ts-satcount");
 
   // ── State ─────────────────────────────────────────────────────────────────
   let totalPackets = 0;
   let lastPacketTime = null;
   let packetCount = 0;
   let currentRate = 0;
+  let satCount = 0;
 
   // Update rate every second
   const rateInterval = setInterval(() => {
@@ -188,11 +195,12 @@ export function createTelemetryStatus(containerId) {
 
   // ── Public API ────────────────────────────────────────────────────────────
   return {
-    onPacket() {
+    onPacket(satellites) {
       totalPackets++;
       packetCount++;
       lastPacketTime = Date.now();
       totalEl.textContent = totalPackets.toLocaleString("en-US");
+      satcountEl.textContent = satellites;
     },
     remove() {
       clearInterval(rateInterval);

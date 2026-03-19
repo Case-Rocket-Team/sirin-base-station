@@ -16,6 +16,8 @@
 //   // Also accepts raw accel for gravity alignment on init:
 //   updateOrientation({ accel: { x, y, z } });
 
+import * as THREE from 'three';
+
 export async function createRocketOrientation(containerId) {
   const container = document.getElementById(containerId);
   if (!container) {
@@ -72,7 +74,7 @@ export async function createRocketOrientation(containerId) {
   });
 
   // ── Load GLTFLoader ───────────────────────────────────────────────────────────
-  await new Promise((resolve) => {
+  await new Promise((resolve, reject) => {
     if (THREE.GLTFLoader) return resolve();
     const s = document.createElement("script");
     s.src = "https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js";
@@ -99,6 +101,7 @@ export async function createRocketOrientation(containerId) {
     camera.updateProjectionMatrix();
   }
   new ResizeObserver(resize).observe(circle);
+  resize();
 
   // ── Scene ─────────────────────────────────────────────────────────────────────
   const scene = new THREE.Scene();
