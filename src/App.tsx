@@ -16,6 +16,8 @@ function App() {
     setActivePanel(panel);
   };
 
+  //The following code was left over from the initial app but I moved it functionally into TelemetryPanel
+  //I just have not removed it
   useEffect(() => {
     const onLoraConnMsg = new Channel<any>();
     const onPacket = new Channel<any>();
@@ -36,6 +38,7 @@ function App() {
       console.error("Error invoking listen_to_lora:", err);
     });
   }, []);
+  //End code that should probably be moved
 
   return (
     <>
