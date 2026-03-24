@@ -22,6 +22,7 @@
     },
     "telegps_demod": {
         "enabled": false,
+        "center_freq": 434500000,
         "sample_rate": 2000000,
         "audio_rate": 24000
     },
