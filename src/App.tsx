@@ -16,7 +16,7 @@ function App() {
     setActivePanel(panel);
   };
 
-  useEffect(() => {
+  /*useEffect(() => {
     const onLoraConnMsg = new Channel<any>();
     const onPacket = new Channel<any>();
 
@@ -35,7 +35,7 @@ function App() {
     }).catch((err) => {
       console.error("Error invoking listen_to_lora:", err);
     });
-  }, []);
+  }, []);*/
 
   return (
     <>

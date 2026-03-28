@@ -12,14 +12,15 @@
 //   trace.reset();                // clear trail and restart
 //   trace.remove();               // cleanup
 
+import * as THREE from "three";
+
 export async function createPositionTrace(containerId) {
   const container = document.getElementById(containerId);
   if (!container) {
     console.error(`Container with id "${containerId}" not found`);
     return { addPoint: () => {}, reset: () => {}, remove: () => {} };
   }
-
-  // ── Styles ────────────────────────────────────────────────────────────────
+  
   if (!document.getElementById("position-trace-style")) {
     const style = document.createElement("style");
     style.id = "position-trace-style";
@@ -119,15 +120,6 @@ export async function createPositionTrace(containerId) {
     </div>
   `;
 
-  // ── Load Three.js ─────────────────────────────────────────────────────────
-  const THREE = await new Promise((resolve) => {
-    if (window.THREE) return resolve(window.THREE);
-    const s = document.createElement("script");
-    s.src = "https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js";
-    s.onload = () => resolve(window.THREE);
-    document.head.appendChild(s);
-  });
-
   const canvas   = document.getElementById(`${containerId}-canvas`);
   const wrapper  = document.getElementById(`${containerId}-wrapper`);
   const scaleEl  = document.getElementById(`${containerId}-scale`);
@@ -140,9 +132,8 @@ export async function createPositionTrace(containerId) {
 
   // ── Camera — fixed isometric-ish view, never moves ────────────────────────
   const camera = new THREE.PerspectiveCamera(45, 1, 0.001, 100000);
-  // Positioned at a fixed 45° angle looking at origin
-  const CAM_THETA = Math.PI / 4;       // 45° horizontal
-  const CAM_PHI   = Math.PI / 3.5;     // ~51° vertical
+  const CAM_THETA = Math.PI / 4;
+  const CAM_PHI   = Math.PI / 3.5;
   const CAM_DIST  = 8;
 
   function positionCamera(dist) {
@@ -166,16 +157,14 @@ export async function createPositionTrace(containerId) {
   new ResizeObserver(resize).observe(wrapper);
   resize();
 
-  // ── Scene ─────────────────────────────────────────────────────────────────
+  //Lighting 
   const scene = new THREE.Scene();
-
-  // ── Lighting ──────────────────────────────────────────────────────────────
   scene.add(new THREE.AmbientLight(0xffffff, 0.6));
   const sun = new THREE.DirectionalLight(0x8ab4f8, 0.7);
   sun.position.set(5, 8, 5);
   scene.add(sun);
 
-  // ── Ground plane (rescales with scene) ────────────────────────────────────
+  //Ground plane
   const planeMat = new THREE.MeshBasicMaterial({
     color: 0x0d1520,
     transparent: true,
@@ -186,7 +175,7 @@ export async function createPositionTrace(containerId) {
   planeMesh.rotation.x = -Math.PI / 2;
   scene.add(planeMesh);
 
-  // ── Grid (rescales with scene) ────────────────────────────────────────────
+  //Grid
   let gridHelper = null;
   function rebuildGrid(size) {
     if (gridHelper) scene.remove(gridHelper);
@@ -198,17 +187,16 @@ export async function createPositionTrace(containerId) {
   }
   rebuildGrid(10);
 
-  // ── Axis arrows ───────────────────────────────────────────────────────────
-  // Stored so we can rescale them
+  //Axis arrows
   let axisGroup = new THREE.Group();
   scene.add(axisGroup);
 
   function rebuildAxes(len) {
     while (axisGroup.children.length) axisGroup.remove(axisGroup.children[0]);
     const axes = [
-      { dir: [1, 0, 0], color: 0x00e5ff }, // X
-      { dir: [0, 1, 0], color: 0x4ade80 }, // Y (up)
-      { dir: [0, 0, 1], color: 0xf87171 }, // Z
+      { dir: [1, 0, 0], color: 0x00e5ff },
+      { dir: [0, 1, 0], color: 0x4ade80 },
+      { dir: [0, 0, 1], color: 0xf87171 },
     ];
     axes.forEach(({ dir, color }) => {
       const mat = new THREE.LineBasicMaterial({ color });
@@ -219,25 +207,22 @@ export async function createPositionTrace(containerId) {
   }
   rebuildAxes(1.5);
 
-  // ── Scale bar ─────────────────────────────────────────────────────────────
+  //Scale
   let scaleBarGroup = null;
   function rebuildScaleBar(worldLen, labelMeters) {
     if (scaleBarGroup) { scene.remove(scaleBarGroup); }
     scaleBarGroup = new THREE.Group();
-    // Place scale bar at bottom-left of ground plane
     const offset = -4.5;
     scaleBarGroup.position.set(offset, 0.01, offset);
     const mat = new THREE.LineBasicMaterial({ color: 0x4488cc, transparent: true, opacity: 0.9 });
     const linePts = [new THREE.Vector3(0, 0, 0), new THREE.Vector3(worldLen, 0, 0)];
     scaleBarGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(linePts), mat));
-    // End ticks
     [[0], [worldLen]].forEach(([x]) => {
       const tp = [new THREE.Vector3(x, 0, -0.1), new THREE.Vector3(x, 0, 0.1)];
       scaleBarGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(tp), mat));
     });
     scene.add(scaleBarGroup);
 
-    // Update text label
     const label = labelMeters >= 1000
       ? `scale: ${(labelMeters / 1000).toFixed(labelMeters >= 10000 ? 0 : 1)} km / bar`
       : labelMeters >= 1
@@ -246,14 +231,13 @@ export async function createPositionTrace(containerId) {
     scaleEl.textContent = label;
   }
 
-  // ── Trail + markers state ─────────────────────────────────────────────────
-  let rawPoints   = [];   // { x, y, z } relative to origin, in real meters
+  //Trail and markers state
+  let rawPoints   = [];
   let origin      = null;
   let trailLine   = null;
   let startMarker = null;
   let endMarker   = null;
 
-  // ── Compute nice round number for scale bar ───────────────────────────────
   function niceNumber(x) {
     const candidates = [0.01, 0.05, 0.1, 0.25, 0.5, 1, 2, 5, 10, 25, 50,
                         100, 250, 500, 1000, 2500, 5000, 10000, 25000, 50000];
@@ -261,11 +245,9 @@ export async function createPositionTrace(containerId) {
     return candidates[candidates.length - 1];
   }
 
-  // ── Full scene rebuild — called on every addPoint ─────────────────────────
   function rebuildScene() {
     if (rawPoints.length === 0) return;
 
-    // Compute bounding box of all points
     let minX = Infinity, maxX = -Infinity;
     let minY = Infinity, maxY = -Infinity;
     let minZ = Infinity, maxZ = -Infinity;
@@ -275,17 +257,14 @@ export async function createPositionTrace(containerId) {
       if (p.z < minZ) minZ = p.z; if (p.z > maxZ) maxZ = p.z;
     });
 
-    // Max extent across all axes
     const extentX = maxX - minX || 1e-6;
     const extentY = maxY - minY || 1e-6;
     const extentZ = maxZ - minZ || 1e-6;
     const maxExtent = Math.max(extentX, extentY, extentZ);
 
-    // Map real meters → world units so path always fits in TARGET_WORLD_SIZE
     const TARGET_WORLD_SIZE = 7.0;
     const scale = TARGET_WORLD_SIZE / maxExtent;
 
-    // Center offset — keep path centered at origin
     const cx = (minX + maxX) / 2;
     const cy = (minY + maxY) / 2;
     const cz = (minZ + maxZ) / 2;
@@ -293,25 +272,21 @@ export async function createPositionTrace(containerId) {
     function toWorld(p) {
       return new THREE.Vector3(
         (p.x - cx) * scale,
-        (p.z - cz) * scale,   // ECEF Z → Three.js Y (up)
-        (p.y - cy) * scale,   // ECEF Y → Three.js Z
+        (p.z - cz) * scale,
+        (p.y - cy) * scale,
       );
     }
 
-    // ── Rebuild grid / plane / axes to match scale ────────────────────────
     const gridSize = TARGET_WORLD_SIZE * 1.3;
     rebuildGrid(gridSize);
     rebuildAxes(gridSize * 0.18);
 
-    // ── Scale bar ──────────────────────────────────────────────────────────
-    const scaleMeters  = niceNumber(maxExtent * 0.25);
-    const scaleWorld   = scaleMeters * scale;
+    const scaleMeters = niceNumber(maxExtent * 0.25);
+    const scaleWorld  = scaleMeters * scale;
     rebuildScaleBar(scaleWorld, scaleMeters);
 
-    // ── Camera distance — pull back enough to see everything ───────────────
     positionCamera(gridSize * 0.85);
 
-    // ── Trail line ─────────────────────────────────────────────────────────
     if (trailLine) { scene.remove(trailLine); trailLine.geometry.dispose(); trailLine = null; }
 
     if (rawPoints.length >= 2) {
@@ -321,7 +296,6 @@ export async function createPositionTrace(containerId) {
         const wp = toWorld(p);
         positions.push(wp.x, wp.y, wp.z);
         const t = i / (rawPoints.length - 1);
-        // dim cyan at start → bright white at end
         colors.push(0.15 + 0.85 * t, 0.35 + 0.65 * t, 0.55 + 0.45 * t);
       });
       const geo = new THREE.BufferGeometry();
@@ -331,15 +305,13 @@ export async function createPositionTrace(containerId) {
       scene.add(trailLine);
     }
 
-    // ── Start marker (yellow sphere) ───────────────────────────────────────
     if (startMarker) { scene.remove(startMarker); startMarker = null; }
     if (rawPoints.length >= 1) {
-      const wp = toWorld(rawPoints[0]);
+      const wp  = toWorld(rawPoints[0]);
       const geo = new THREE.SphereGeometry(0.09, 12, 12);
       const mat = new THREE.MeshBasicMaterial({ color: 0xfacc15 });
       startMarker = new THREE.Mesh(geo, mat);
       startMarker.position.copy(wp);
-      // glow ring
       const ringGeo = new THREE.RingGeometry(0.11, 0.16, 24);
       const ringMat = new THREE.MeshBasicMaterial({ color: 0xfacc15, transparent: true, opacity: 0.35, side: THREE.DoubleSide });
       const ring = new THREE.Mesh(ringGeo, ringMat);
@@ -348,7 +320,6 @@ export async function createPositionTrace(containerId) {
       scene.add(startMarker);
     }
 
-    // ── End marker (white sphere) ──────────────────────────────────────────
     if (endMarker) { scene.remove(endMarker); endMarker = null; }
     if (rawPoints.length >= 1) {
       const last = rawPoints[rawPoints.length - 1];
@@ -357,7 +328,6 @@ export async function createPositionTrace(containerId) {
       const mat  = new THREE.MeshBasicMaterial({ color: 0xffffff });
       endMarker  = new THREE.Mesh(geo, mat);
       endMarker.position.copy(wp);
-      // pulse ring
       const ringGeo = new THREE.RingGeometry(0.11, 0.16, 24);
       const ringMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.3, side: THREE.DoubleSide });
       const ring = new THREE.Mesh(ringGeo, ringMat);
@@ -367,7 +337,7 @@ export async function createPositionTrace(containerId) {
     }
   }
 
-  // ── Render loop ───────────────────────────────────────────────────────────
+  //Animation loop
   let animating = true;
   (function animate() {
     if (!animating) return;
@@ -375,12 +345,10 @@ export async function createPositionTrace(containerId) {
     renderer.render(scene, camera);
   })();
 
-  // ── Public API ────────────────────────────────────────────────────────────
   return {
     addPoint(absPos) {
       if (!absPos || absPos.x == null) return;
 
-      // Set origin on first point
       if (origin === null) {
         origin = { x: absPos.x, y: absPos.y, z: absPos.z };
         nodataEl.style.display = "none";

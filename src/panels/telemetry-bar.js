@@ -4,6 +4,14 @@
 // Center:     Mission Title + Flight Mode
 // Right side: Acceleration | Apogee
 //
+// Fonts (Orbitron, Rajdhani) must be imported in main.tsx via @fontsource packages:
+//   import "@fontsource/orbitron/400.css";
+//   import "@fontsource/orbitron/700.css";
+//   import "@fontsource/orbitron/900.css";
+//   import "@fontsource/rajdhani/400.css";
+//   import "@fontsource/rajdhani/600.css";
+//   import "@fontsource/rajdhani/700.css";
+//
 // Usage:
 //   const bar = createTelemetryBar("my-container-id", { title: "SIRIN BASE STATION" });
 //   bar.update({ velocity: 120, altitude: 500, acceleration: 1.2, mode: "Standby" });
@@ -24,13 +32,7 @@ export function createTelemetryBar(containerId, { title = "SIRIN BASE STATION" }
 
   const METERS_TO_FEET = 3.28084;
 
-  // ── Inject font + styles ───────────────────────────────────────────────────
   if (!document.getElementById("telemetry-bar-style")) {
-    const link = document.createElement("link");
-    link.rel = "stylesheet";
-    link.href = "https://fonts.googleapis.com/css2?family=Rajdhani:wght@300;400;600;700&family=Orbitron:wght@400;700;900&display=swap";
-    document.head.appendChild(link);
-
     const style = document.createElement("style");
     style.id = "telemetry-bar-style";
     style.textContent = `
@@ -87,7 +89,6 @@ export function createTelemetryBar(containerId, { title = "SIRIN BASE STATION" }
         white-space: nowrap;
       }
 
-      /* Flight mode badge */
       .tb-mode {
         font-family: 'Orbitron', monospace;
         font-weight: 700;
@@ -130,7 +131,6 @@ export function createTelemetryBar(containerId, { title = "SIRIN BASE STATION" }
         justify-content: flex-end;
       }
 
-      /* Fixed-width metric cells so numbers never resize the box */
       .tb-metric {
         display: flex;
         align-items: center;
@@ -169,7 +169,6 @@ export function createTelemetryBar(containerId, { title = "SIRIN BASE STATION" }
         align-items: baseline;
         gap: 6px;
       }
-      /* Fixed-width value span — number changes never affect layout */
       .tb-metric-value {
         font-family: 'Orbitron', monospace;
         font-weight: 700;
@@ -198,11 +197,9 @@ export function createTelemetryBar(containerId, { title = "SIRIN BASE STATION" }
     document.head.appendChild(style);
   }
 
-  // ── Build DOM ──────────────────────────────────────────────────────────────
   const bar = document.createElement("div");
   bar.className = "tb-bar";
   bar.innerHTML = `
-    <!-- Left: Velocity | Altitude -->
     <div class="tb-left">
       <div class="tb-metric">
         <div class="tb-metric-inner">
@@ -224,13 +221,11 @@ export function createTelemetryBar(containerId, { title = "SIRIN BASE STATION" }
       </div>
     </div>
 
-    <!-- Center: Title + Mode -->
     <div class="tb-title">
       <span class="tb-title-text">${title}</span>
       <span class="tb-mode tb-mode-unknown" id="tb-mode">● WAITING</span>
     </div>
 
-    <!-- Right: Acceleration | Apogee -->
     <div class="tb-right">
       <div class="tb-metric">
         <div class="tb-metric-inner">
@@ -255,17 +250,14 @@ export function createTelemetryBar(containerId, { title = "SIRIN BASE STATION" }
 
   container.appendChild(bar);
 
-  // ── Element refs ───────────────────────────────────────────────────────────
   const velEl    = bar.querySelector("#tb-velocity");
   const altEl    = bar.querySelector("#tb-altitude");
   const accelEl  = bar.querySelector("#tb-acceleration");
   const apogeeEl = bar.querySelector("#tb-apogee");
   const modeEl   = bar.querySelector("#tb-mode");
 
-  // ── Apogee tracking — highest altitude seen from State packets ────────────
   let maxAltitudeFt = null;
 
-  // ── Formatters ─────────────────────────────────────────────────────────────
   function fmtVelocity(v) {
     if (v == null) return "---";
     return Math.round(Math.abs(v)).toLocaleString("en-US");
@@ -308,7 +300,6 @@ export function createTelemetryBar(containerId, { title = "SIRIN BASE STATION" }
     }
   }
 
-  // ── Public API ─────────────────────────────────────────────────────────────
   return {
     update({ velocity, altitude, acceleration, mode } = {}) {
       if (velocity     !== undefined) velEl.textContent   = fmtVelocity(velocity);

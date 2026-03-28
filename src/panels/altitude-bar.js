@@ -1,4 +1,3 @@
-// altitude-bar.js
 export function createAltitudeBar(containerId, rocketImagePath = "./images/RealRocket.jpg") {
   const container = document.getElementById(containerId);
   if (!container) {
@@ -6,13 +5,7 @@ export function createAltitudeBar(containerId, rocketImagePath = "./images/RealR
     return;
   }
 
-  // ── Inject font + styles ───────────────────────────────────────────────────
   if (!document.getElementById("altitude-bar-style")) {
-    const link = document.createElement("link");
-    link.rel = "stylesheet";
-    link.href = "https://fonts.googleapis.com/css2?family=Rajdhani:wght@300;400;600;700&family=Orbitron:wght@400;700;900&display=swap";
-    document.head.appendChild(link);
-
     const style = document.createElement("style");
     style.id = "altitude-bar-style";
     style.textContent = `
@@ -31,7 +24,6 @@ export function createAltitudeBar(containerId, rocketImagePath = "./images/RealR
         box-sizing: border-box;
       }
 
-      /* Left accent line */
       .altitude-container::before {
         content: '';
         position: absolute;
@@ -60,7 +52,6 @@ export function createAltitudeBar(containerId, rocketImagePath = "./images/RealR
         white-space: nowrap;
       }
 
-      /* Tick mark on the left edge of each marker */
       .marker::before {
         content: '';
         position: absolute;
@@ -94,7 +85,6 @@ export function createAltitudeBar(containerId, rocketImagePath = "./images/RealR
         box-shadow: 0 0 10px rgba(80,160,255,0.25);
       }
 
-      /* Label at the top */
       .altitude-label {
         position: absolute;
         top: 8px;
@@ -112,7 +102,6 @@ export function createAltitudeBar(containerId, rocketImagePath = "./images/RealR
     document.head.appendChild(style);
   }
 
-  // ── Insert HTML ────────────────────────────────────────────────────────────
   container.innerHTML = `
     <div class="altitude-container">
       <div class="bar-fill"></div>
@@ -124,11 +113,11 @@ export function createAltitudeBar(containerId, rocketImagePath = "./images/RealR
     </div>
   `;
 
-  const rocket           = container.querySelector(".rocket");
-  const barFill          = container.querySelector(".bar-fill");
+  const rocket            = container.querySelector(".rocket");
+  const barFill           = container.querySelector(".bar-fill");
   const altitudeContainer = container.querySelector(".altitude-container");
 
-  const maxAltitude = 12144; // ~40k ft in meters
+  const maxAltitude = 12144; // 40k ft in meters
 
   function updatePositions(altMeters) {
     const containerHeight = altitudeContainer.offsetHeight;

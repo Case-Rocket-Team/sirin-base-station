@@ -13,7 +13,6 @@ export function createTelemetryStatus(containerId) {
     return { onPacket: () => {}, remove: () => {} };
   }
 
-  // ── Inject styles (shared font already loaded by telemetry-bar) ──────────
   if (!document.getElementById("telemetry-status-style")) {
     const style = document.createElement("style");
     style.id = "telemetry-status-style";
@@ -93,7 +92,6 @@ export function createTelemetryStatus(containerId) {
     document.head.appendChild(style);
   }
 
-  // ── Build DOM ─────────────────────────────────────────────────────────────
   const panel = document.createElement("div");
   panel.className = "ts-panel";
   panel.innerHTML = `
@@ -141,7 +139,6 @@ export function createTelemetryStatus(containerId) {
   const signalEl = panel.querySelector("#ts-signal");
   const satcountEl = panel.querySelector("#ts-satcount");
 
-  // ── State ─────────────────────────────────────────────────────────────────
   let totalPackets = 0;
   let lastPacketTime = null;
   let packetCount = 0;
@@ -193,7 +190,6 @@ export function createTelemetryStatus(containerId) {
     );
   }, 100);
 
-  // ── Public API ────────────────────────────────────────────────────────────
   return {
     onPacket(satellites) {
       totalPackets++;

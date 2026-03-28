@@ -20,7 +20,6 @@ export function createApogeePredictor(containerId) {
   const GRAVITY        = 9.80665;
   const METERS_TO_FEET = 3.28084;
 
-  // ── Styles ─────────────────────────────────────────────────────────────────
   if (!document.getElementById("ap-style")) {
     const style = document.createElement("style");
     style.id = "ap-style";
@@ -112,7 +111,6 @@ export function createApogeePredictor(containerId) {
     document.head.appendChild(style);
   }
 
-  // ── Build DOM ──────────────────────────────────────────────────────────────
   const panel = document.createElement("div");
   panel.className = "ap-panel";
   panel.innerHTML = `
@@ -129,7 +127,6 @@ export function createApogeePredictor(containerId) {
   const valueEl     = panel.querySelector("#ap-value");
   const directionEl = panel.querySelector("#ap-direction");
 
-  // Minimum vertical velocity (m/s) to show ascending/descending label
   const VEL_THRESHOLD = 2.0;
 
   let locked = false;
@@ -141,8 +138,6 @@ export function createApogeePredictor(containerId) {
 
   return {
     update({ altitude, velX, apogee } = {}) {
-
-      // ── Locked: actual apogee confirmed ──────────────────────────────────
       if (apogee != null) {
         if (!locked) locked = true;
         headerEl.textContent  = "Apogee";
@@ -152,14 +147,12 @@ export function createApogeePredictor(containerId) {
         return;
       }
 
-      // ── Estimating ────────────────────────────────────────────────────────
       if (altitude == null || velX == null) {
         valueEl.textContent   = "---";
         directionEl.className = "ap-direction ap-hidden";
         return;
       }
 
-      // Ballistic: projected = altitude + v² / (2g), only adds gain if ascending
       const hExtra     = velX > 0 ? (velX * velX) / (2 * GRAVITY) : 0;
       const projectedFt = (altitude + hExtra) * METERS_TO_FEET;
 
@@ -167,7 +160,6 @@ export function createApogeePredictor(containerId) {
       valueEl.textContent  = fmt(projectedFt);
       valueEl.className    = "ap-value";
 
-      // Direction label — only show if velocity is significant
       if (velX > VEL_THRESHOLD) {
         directionEl.textContent = "▲ Ascending";
         directionEl.className   = "ap-direction ap-ascending";

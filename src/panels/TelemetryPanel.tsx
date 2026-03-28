@@ -18,7 +18,6 @@ type Props = {
   goBack: () => void;
 };
 
-// Module-level flag — persists across remounts, prevents double USB claim
 let listeningStarted = false;
 
 export default function TelemetryPanel({ goBack }: Props) {
@@ -130,21 +129,8 @@ export default function TelemetryPanel({ goBack }: Props) {
       // Update orientation from latest State
       if (updateOrientation) {
         const quat = lastState?.nominal?.rot_quaternion;
-
-        const quatValid = quat &&
-          typeof quat.r === "number" && isFinite(quat.r) &&
-          typeof quat.x === "number" && isFinite(quat.x) &&
-          typeof quat.y === "number" && isFinite(quat.y) &&
-          typeof quat.z === "number" && isFinite(quat.z) &&
-          (quat.r !== 0 || quat.x !== 0 || quat.y !== 0 || quat.z !== 0);
-
-        if (quatValid) {
+        if (quat) {
           updateOrientation({ quat });
-        } else if (lastData) {
-          updateOrientation({
-            accel: lastData.imu.accel.Ok,
-            gyro:  lastData.imu.angular_vel.Ok,
-          });
         }
       }
     };
