@@ -48,23 +48,54 @@ export default function TelemetryPanel({ goBack }: Props) {
       addTracePoint = t.addPoint;
     });
 
-    // Checks if the HackRF or a USB sirin are connected every 2 seconds
-    const poll = async () => {
+    //Begins polling the Rust backend. Also handles when they are disconnected
+    const startListening = async () => {
+      if (listeningStarted) return;
+      listeningStarted = false;
       try {
-        const connected = await invoke<boolean>("check_hackrf");
-        setHackrfConnected(connected);
+        const usbAvailable = await invoke<boolean>("check_usb")
+        const loraAvailable = await invoke<boolean>("check_hackrf")
+        if (loraAvailable && !listeningStarted) {
+          invoke("listen_to_lora", { onLoraConnMsg: onLoraConnMsg, onPacket: onPacket });
+          const connected = await invoke<boolean>("check_hackrf");
+          setHackrfConnected(connected);
+          listeningStarted = true;
+          console.log("Radio connected, connection established!");
+        }
+        else if (!loraAvailable && listeningStarted){
+          listeningStarted = false;
+          console.log("Radio disconnected");
+        }
+        else if (usbAvailable && !listeningStarted) {
+          invoke("listen_to_usb", { onLoraConnMsg: onUsbMsg, onPacket: onPacket });
+          const connected = await invoke<boolean>("check_usb");
+          setUsbConnected(connected);
+          listeningStarted = true;
+          console.log("USB connected, connection established!");
+        }
+        else if (!usbAvailable && listeningStarted){
+          listeningStarted = false;
+          console.log("USB disconnected");
+        }
       } catch (e) {
-        setHackrfConnected(false);
-      }
-      try {
-        const usb = await invoke<boolean>("check_usb");
-        setUsbConnected(usb);
-      } catch (e) {
-        setUsbConnected(false);
+        invoke("listen_to_lora", { onLoraConnMsg: onLoraConnMsg, onPacket: onPacket });
       }
     };
-    poll();
-    const interval = setInterval(poll, 2000);
+
+    //Attempts to run lora_demod
+    try {
+      console.log("trying to run hackrf...");
+      //TODO: const hackrf = invoke<boolean>("run_lora_demod");
+      console.log("lora_demod.sh successfully ran");
+    } catch (e) {
+      console.log("lora_demod.sh could not be run"); 
+    }
+
+    
+    //Retries connections every 2 seconds
+    startListening();
+    const interval = setInterval(startListening, 2000);
+
 
     // Packet rate counter — resets every second
     const rateInterval = setInterval(() => {
@@ -74,7 +105,7 @@ export default function TelemetryPanel({ goBack }: Props) {
 
     const onPacket = new Channel();
     onPacket.onmessage = (msg: any) => {
-      status.onPacket();
+      console.log("New message!!!");
       //Update packet counter
       packetCount++;
       const logEntry = msg.packet?.packet?.LogEntry;
@@ -135,8 +166,8 @@ export default function TelemetryPanel({ goBack }: Props) {
       }
     };
 
-    const onConnMsg = new Channel();
-    onConnMsg.onmessage = (msg: any) => {
+    const onLoraConnMsg = new Channel();
+    onLoraConnMsg.onmessage = (msg: any) => {
       console.log("LoRa connection status:", msg);
     };
 
@@ -147,27 +178,7 @@ export default function TelemetryPanel({ goBack }: Props) {
 
     // Auto-detect: try USB first, fall back to LoRa
     // Rust side retries connection when needed
-    const startListening = async () => {
-      if (listeningStarted) return;
-      listeningStarted = true;
-
-      try {
-        const usbAvailable = await invoke<boolean>("check_usb");
-        if (usbAvailable) {
-          console.log("Sirin USB detected — using USB.");
-          invoke("listen_to_usb", { onUsbConnMsg: onUsbMsg, onPacket });
-        } else {
-          console.log("No USB device — falling back to LoRa.");
-          invoke("listen_to_lora", { onLoraConnMsg: onConnMsg, onPacket });
-        }
-      } catch (e) {
-        console.error("Failed to start listening:", e);
-        listeningStarted = false;
-        invoke("listen_to_lora", { onLoraConnMsg: onConnMsg, onPacket });
-      }
-    };
-
-    startListening();
+    
 
     return () => {
       clearInterval(interval);
@@ -266,7 +277,7 @@ export default function TelemetryPanel({ goBack }: Props) {
         <div id="telemetry-bar-container" className="h-full w-full" />
       </Window>
 
-      <Window x={15} y={25} width={10} height={40}>
+      <Window x={15} y={25} width={15} height={40}>
         <div id="telemetry-status-container" className="h-full w-full" />
       </Window>
 

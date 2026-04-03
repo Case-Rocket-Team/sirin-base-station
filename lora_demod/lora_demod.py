@@ -7,6 +7,7 @@ import asyncio
 from websockets.asyncio.server import serve, broadcast
 import threading
 import argparse
+import time
 
 class lora_rx(gr.top_block):
     def __init__(self):
@@ -136,7 +137,7 @@ def main():
     tb.start()
     print("Listening...")
     while True:
-        input("")
+        time.sleep(1)
 
 if __name__ == "__main__":
     main()

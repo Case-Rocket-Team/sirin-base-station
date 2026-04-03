@@ -45,6 +45,7 @@ async fn listen_to_lora(
     on_lora_conn_msg: Channel<LoraConnMsg>,
     on_packet: Channel<LoraPacketRx>
 ) {
+    println!("Listen to lora called!");
     let (mut stream, _response) = match connect_async("ws://localhost:8765").await {
         Ok(ws) => ws,
         Err(e) => {
@@ -52,6 +53,7 @@ async fn listen_to_lora(
             return;
         }
     };
+    println!("WebSocketStream opened!");
     let _ = on_lora_conn_msg.send(LoraConnMsg::SocketConnected);
     loop {
         let Some(next) = stream.next().await else { break; };
@@ -62,13 +64,16 @@ async fn listen_to_lora(
                 continue;
             }
         };
-        let Message::Binary(data) = msg else { continue; };
+        println!("Message found!");
+        let Message::Binary(data) = msg else {println!("No data received..."); continue; };
+        println!("Binary data received!");
         let packet = RadioPacket::<OutPacket>::from_song(&data).unwrap();
         let _ = on_packet.send(LoraPacketRx {
             packet: serde_json::to_value(packet).unwrap()
         });
     }
     let _ = on_lora_conn_msg.send(LoraConnMsg::SocketClosed);
+    println!("Message sent over websocket!");
 }
 
 /// Call this when the frontend unmounts — stops the USB retry loop cleanly
@@ -255,27 +260,37 @@ async fn check_usb() -> bool {
         .unwrap_or(false)
 }
 
+#[tauri::command]
+async fn run_lora_demod() {
+    let exe_path = std::env::current_exe().expect("Failed to get executable path");
+    let project_root = exe_path
+        .parent()
+        .and_then(|p| p.parent()) 
+        .and_then(|p| p.parent()) 
+        .and_then(|p| p.parent())
+        .expect("Failed to get project root");
+
+    let script_path = project_root.join("lora_demod/lora_demod.sh");
+    let script_dir = project_root.join("lora_demod");
+
+    let _ = Command::new("sh")
+        .arg(script_path)
+        .current_dir(script_dir)
+        .spawn();
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    //run_lora_demod();
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
+            run_lora_demod,
             listen_to_lora,
             listen_to_usb,
             stop_usb,
             check_hackrf,
-            check_usb
+            check_usb,
         ])
         .plugin(tauri_plugin_opener::init())
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
-}
-
-pub fn run_lora_demod() {
-    let _ = Command::new("sh")
-        .arg("-c")
-        .arg("cd ../lora_demod && ./lora_demod.sh")
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .spawn();
 }
