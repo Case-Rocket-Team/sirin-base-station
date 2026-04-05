@@ -42,7 +42,7 @@ class lora_rx(gr.top_block):
         self.soapy_source_0.set_sample_rate(0, samp_rate)
         self.soapy_source_0.set_frequency(0, center_freq)
         self.soapy_source_0.set_bandwidth(0, bw)
-        self.soapy_source_0.set_gain(0, 20)
+        self.soapy_source_0.set_gain(0, 62)
         self.soapy_source_0.set_min_output_buffer(int(np.ceil(samp_rate / bw * (2**sf + 2))))
 
         ##################################################

@@ -50,11 +50,16 @@ export default function TelemetryPanel({ goBack }: Props) {
 
     //Begins polling the Rust backend. Also handles when they are disconnected
     const startListening = async () => {
-      if (listeningStarted) return;
+      if (listeningStarted) {
+        return;
+      }
       listeningStarted = false;
       try {
         const usbAvailable = await invoke<boolean>("check_usb")
         const loraAvailable = await invoke<boolean>("check_hackrf")
+        //console.log("USB: " + usbAvailable);
+        //console.log("Lora: " + loraAvailable);
+        //console.log("Listening started: " + listeningStarted);
         if (loraAvailable && !listeningStarted) {
           invoke("listen_to_lora", { onLoraConnMsg: onLoraConnMsg, onPacket: onPacket });
           const connected = await invoke<boolean>("check_hackrf");
@@ -67,7 +72,7 @@ export default function TelemetryPanel({ goBack }: Props) {
           console.log("Radio disconnected");
         }
         else if (usbAvailable && !listeningStarted) {
-          invoke("listen_to_usb", { onLoraConnMsg: onUsbMsg, onPacket: onPacket });
+          invoke("listen_to_usb", { onUsbConnMsg: onUsbMsg, onPacket: onPacket });
           const connected = await invoke<boolean>("check_usb");
           setUsbConnected(connected);
           listeningStarted = true;
@@ -79,6 +84,7 @@ export default function TelemetryPanel({ goBack }: Props) {
         }
       } catch (e) {
         invoke("listen_to_lora", { onLoraConnMsg: onLoraConnMsg, onPacket: onPacket });
+        console.log("Listening attempt failed. Call listen to lora");
       }
     };
 
@@ -93,6 +99,7 @@ export default function TelemetryPanel({ goBack }: Props) {
 
     
     //Retries connections every 2 seconds
+    console.log("Trying to start listening...");
     startListening();
     const interval = setInterval(startListening, 2000);
 
