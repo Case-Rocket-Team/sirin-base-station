@@ -1,71 +1,137 @@
 #!/usr/bin/env python3
-from gnuradio import gr, zeromq, analog, blocks, filter as grfilter
-import argparse, signal, sys, os, subprocess
+import os
+import queue
+import signal
+import socket
+import struct
+import subprocess
+import sys
+import threading
 
-class ZmqIqToDirewolf(gr.top_block):
-    def __init__(self, addr, samp_rate, audio_rate=24000, freq_offset=0, timeout_ms=100, out_fd=1):
-        gr.top_block.__init__("ZMQ IQ -> NBFM -> Direwolf PCM", catch_exceptions=True)
+import numpy as np
+import zmq
 
-        self.src = zeromq.sub_source(gr.sizeof_gr_complex, 1, addr, timeout_ms, False, -1)
+# ---------------------------------------------------------------------------
+# Mode: rtl_tcp  (raw IQ -> uint8 interleaved -> rtl_tcp server for SDR#)
+# ---------------------------------------------------------------------------
 
-        # Pick a decimation so quad_rate is reasonable (e.g., 200 kS/s)
-        decim = int(samp_rate // 200_000) if samp_rate >= 200_000 else 1
-        quad_rate = samp_rate / decim
+# Dongle info header: magic "RTL0" + tuner type R820T (5) + gain count (29)
+_DONGLE_INFO = b'RTL0' + struct.pack('>II', 5, 29)
 
-        # Shift freq_offset to baseband and decimate in one block
-        taps = grfilter.firdes.low_pass(1.0, samp_rate, quad_rate / 2, quad_rate / 4)
-        self.xlate = grfilter.freq_xlating_fir_filter_ccc(decim, taps, freq_offset, samp_rate)
 
-        self.nbfm = analog.nbfm_rx(audio_rate=int(audio_rate),quad_rate=quad_rate,tau=75e-6,ax_dev=5e3)
+def _handle_rtl_tcp_client(conn, addr, data_queue):
+    """Send rtl_tcp dongle header then stream IQ chunks from data_queue."""
+    print(f"[rtl_tcp] Client connected: {addr}")
+    try:
+        conn.sendall(_DONGLE_INFO)
 
-        # float audio [-1,1] -> int16 PCM
-        self.scale = blocks.multiply_const_ff(32767.0)
-        self.f2s = blocks.float_to_short(1, 1.0)
-        self.out = blocks.file_descriptor_sink(gr.sizeof_short, out_fd)
+        # Drain incoming commands (SET_FREQ, SET_GAIN, etc.) in a background
+        # thread so they don't block the send path.  We ignore them because
+        # we cannot retune the HackRF from here.
+        def _drain():
+            try:
+                while True:
+                    if not conn.recv(5):
+                        break
+            except OSError:
+                pass
+        threading.Thread(target=_drain, daemon=True).start()
 
-        self.connect(self.src, self.xlate, self.nbfm, self.scale, self.f2s, self.out)
+        while True:
+            chunk = data_queue.get(timeout=5.0)
+            if chunk is None:
+                break
+            conn.sendall(chunk)
+    except (OSError, BrokenPipeError):
+        pass
+    finally:
+        conn.close()
+        print(f"[rtl_tcp] Client disconnected: {addr}")
 
-_PIPE_CMD = 'direwolf -n 1 -r 24000 -b 16 -L "log/$(date)/tele-gps.csv" - | tee >(ts -s > "log/$(date)/raw/tele-gps-direwolf.log")'
 
-def run(config):
-    read_fd, write_fd = os.pipe()
-    p_bash = subprocess.Popen(_PIPE_CMD, stdin=read_fd, shell=True, executable='/bin/bash')
-    os.close(read_fd)
+def run_rtl_tcp(config):
+    zmq_addr  = config.get("addr",          "tcp://127.0.0.1:5555")
+    host      = config.get("rtl_tcp_host",  "0.0.0.0")
+    port      = int(config.get("rtl_tcp_port", 1234))
 
-    top_block = ZmqIqToDirewolf(
-        addr=config.get("addr", "tcp://127.0.0.1:5555"),
-        samp_rate=config.get("samp_rate", 2_000_000),
-        audio_rate=config.get("audio_rate", 24000),
-        freq_offset=config.get("freq_offset", 0),
-        out_fd=write_fd,
-    )
+    client_queues: list[queue.Queue] = []
+    queues_lock = threading.Lock()
+
+    # --- ZMQ reader thread ---------------------------------------------------
+    def _zmq_reader():
+        ctx = zmq.Context()
+        sock = ctx.socket(zmq.SUB)
+        sock.connect(zmq_addr)
+        sock.setsockopt_string(zmq.SUBSCRIBE, "")
+        sock.setsockopt(zmq.RCVTIMEO, 200)
+
+        while True:
+            try:
+                raw = sock.recv()
+            except zmq.Again:
+                continue
+
+            # complex64 -> interleaved uint8 (center 128, range 0-255)
+            samples = np.frombuffer(raw, dtype=np.complex64)
+            iq = np.empty(len(samples) * 2, dtype=np.uint8)
+            iq[0::2] = np.clip(samples.real * 127.5 + 128.0, 0, 255).astype(np.uint8)
+            iq[1::2] = np.clip(samples.imag * 127.5 + 128.0, 0, 255).astype(np.uint8)
+            chunk = iq.tobytes()
+
+            with queues_lock:
+                for q in client_queues[:]:
+                    try:
+                        q.put_nowait(chunk)
+                    except queue.Full:
+                        pass  # slow client — drop chunk rather than block
+
+    threading.Thread(target=_zmq_reader, daemon=True, name="rtl_tcp_zmq").start()
+
+    # --- TCP server ----------------------------------------------------------
+    server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    server.bind((host, port))
+    server.listen(5)
+    print(f"[rtl_tcp] Listening on {host}:{port}  (connect SDR# here)")
 
     def _sig_handler(sig, frame):
-        top_block.stop()
-        top_block.wait()
-        os.close(write_fd)
-        p_bash.wait()
+        server.close()
         sys.exit(0)
 
     signal.signal(signal.SIGINT, _sig_handler)
     signal.signal(signal.SIGTERM, _sig_handler)
-    top_block.start()
-    signal.pause()
+
+    while True:
+        try:
+            conn, addr = server.accept()
+        except OSError:
+            break
+
+        q: queue.Queue = queue.Queue(maxsize=50)
+        with queues_lock:
+            client_queues.append(q)
+
+        def _client_thread(conn=conn, addr=addr, q=q):
+            _handle_rtl_tcp_client(conn, addr, q)
+            with queues_lock:
+                if q in client_queues:
+                    client_queues.remove(q)
+
+        threading.Thread(target=_client_thread, daemon=True).start()
 
 
 def main():
+    import argparse
     arg_parser = argparse.ArgumentParser()
-    arg_parser.add_argument("--addr", default="tcp://127.0.0.1:5555", help="ZMQ SUB endpoint")
-    arg_parser.add_argument("--samp-rate", type=float, default=2_000_000)
-    arg_parser.add_argument("--audio-rate", type=float, default=24000)
-    arg_parser.add_argument("--freq-offset", type=float, default=0, help="Frequency offset from HackRF center in Hz")
+    arg_parser.add_argument("--addr",          default="tcp://127.0.0.1:5555", help="ZMQ SUB endpoint")
+    arg_parser.add_argument("--rtl-tcp-host",  default="0.0.0.0",              help="rtl_tcp bind host")
+    arg_parser.add_argument("--rtl-tcp-port",  type=int, default=1234,         help="rtl_tcp bind port")
     args = arg_parser.parse_args()
 
-    run({
-        "addr":        args.addr,
-        "samp_rate":   args.samp_rate,
-        "audio_rate":  args.audio_rate,
-        "freq_offset": args.freq_offset,
+    run_rtl_tcp({
+        "addr":          args.addr,
+        "rtl_tcp_host":  args.rtl_tcp_host,
+        "rtl_tcp_port":  args.rtl_tcp_port,
     })
 
 

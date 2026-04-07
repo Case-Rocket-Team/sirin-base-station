@@ -1,9 +1,9 @@
 {
     "hack_rf_config": {
-        "center_freq": 434500000,
+        "center_freq": 434675000,
         "bandwidth": 2000000,
         "sample_rate": 2000000,
-        "gain": 20
+        "gain": 40
     },
     "lora_hack_rf_config": {
         "center_freq": 434500000,
@@ -18,16 +18,19 @@
         "enabled": true,
         "port": 8765,
         "host": "localhost",
-        "listen_to_zmq": false
+        "listen_to_zmq": true
     },
     "telegps_demod": {
-        "enabled": false,
-        "center_freq": 434500000,
+        "enabled": true,
+        "center_freq": 434550000,
         "sample_rate": 2000000,
-        "audio_rate": 24000
+        "audio_rate": 25000,
+        "mode": "direwolf",
+        "rtl_tcp_host": "0.0.0.0",
+        "rtl_tcp_port": 1234
     },
     "zmq_splitter": {
-        "enabled": false,
+        "enabled": true,
         "zmq_pub_addr1": "tcp://127.0.0.1:5555",
         "zmq_pub_addr2": "tcp://127.0.0.1:5556"
     }

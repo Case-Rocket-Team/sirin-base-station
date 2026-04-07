@@ -119,10 +119,13 @@ def launch_from_config(config_data):
     if telegps_enabled:
         zmq_addr = zmq["zmq_pub_addr2"] if lora_enabled else zmq["zmq_pub_addr1"]
         demodulators.append((run_telegps, {
-            "addr":        zmq_addr,
-            "samp_rate":   telegps["sample_rate"],
-            "audio_rate":  telegps["audio_rate"],
-            "freq_offset": telegps.get("center_freq", hw["center_freq"]) - hw["center_freq"],
+            "addr":         zmq_addr,
+            "samp_rate":    telegps["sample_rate"],
+            "audio_rate":   telegps["audio_rate"],
+            "freq_offset":  telegps.get("center_freq", hw["center_freq"]) - hw["center_freq"],
+            "mode":         telegps.get("mode", "direwolf"),
+            "rtl_tcp_host": telegps.get("rtl_tcp_host", "0.0.0.0"),
+            "rtl_tcp_port": telegps.get("rtl_tcp_port", 1234),
         }, "telegps_demod"))
 
     start_watchdogs(demodulators)
