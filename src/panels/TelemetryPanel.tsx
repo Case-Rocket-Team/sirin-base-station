@@ -48,6 +48,10 @@ export default function TelemetryPanel({ goBack }: Props) {
       addTracePoint = t.addPoint;
     });
 
+    const startDemod = async () => {
+      const hackrf = await invoke<boolean>("run_lora_demod");
+    }
+
     //Begins polling the Rust backend. Also handles when they are disconnected
     const startListening = async () => {
       if (listeningStarted) {
@@ -91,7 +95,7 @@ export default function TelemetryPanel({ goBack }: Props) {
     //Attempts to run lora_demod
     try {
       console.log("trying to run hackrf...");
-      //TODO: const hackrf = invoke<boolean>("run_lora_demod");
+      startDemod();
       console.log("lora_demod.sh successfully ran");
     } catch (e) {
       console.log("lora_demod.sh could not be run"); 
