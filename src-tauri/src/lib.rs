@@ -67,10 +67,27 @@ async fn listen_to_lora(
         println!("Message found!");
         let Message::Binary(data) = msg else {println!("No data received..."); continue; };
         println!("Binary data received!");
-        let packet = RadioPacket::<OutPacket>::from_song(&data).unwrap();
-        let _ = on_packet.send(LoraPacketRx {
-            packet: serde_json::to_value(packet).unwrap()
-        });
+        let packet = match RadioPacket::<OutPacket>::from_song(&data) {
+            Ok(p) => p,
+            Err(e) => {
+                let _ = on_lora_conn_msg.send(LoraConnMsg::Error(
+                    format!("Decode error: {:?}", e)
+                ));
+                continue;
+            }
+        };
+
+        let payload = match serde_json::to_value(&packet) {
+            Ok(v) => v,
+            Err(e) => {
+                let _ = on_lora_conn_msg.send(LoraConnMsg::Error(
+                    format!("Serialize error: {}", e)
+                ));
+                continue;
+            }
+        };
+
+        let _ = on_packet.send(LoraPacketRx { packet: payload });
     }
     let _ = on_lora_conn_msg.send(LoraConnMsg::SocketClosed);
     println!("Message sent over websocket!");
