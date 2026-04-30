@@ -1,0 +1,304 @@
+import React, { useEffect, useState } from "react";
+import Window from "../panels/Window";
+import { Channel, invoke } from "@tauri-apps/api/core";
+// @ts-ignore
+import { createAltitudeBar } from "../panels/altitude-bar.js";
+// @ts-ignore
+import { createRocketOrientation } from "../panels/rocket-orientation.js";
+// @ts-ignore
+import { createTelemetryBar } from "../panels/telemetry-bar.js";
+// @ts-ignore
+import { createTelemetryStatus } from "../panels/telemetry-status.js";
+// @ts-ignore
+import { createPositionTrace } from "../panels/position-trace.js";
+// @ts-ignore
+import { createApogeePredictor } from "../panels/apogee-predictor.js";
+
+type Props = {
+  goBack: () => void;
+};
+
+let listeningStarted = false;
+
+export default function TelemetryPanel({ goBack }: Props) {
+  const [hackrfConnected, setHackrfConnected] = useState<boolean | null>(null);
+  const [usbConnected, setUsbConnected] = useState<boolean | null>(null);
+  const [packetRate, setPacketRate] = useState<number>(0);
+
+  useEffect(() => {
+    listeningStarted = false;
+
+    // Cache latest of each packet type independently
+    let lastData: any = null;
+    let lastState: any = null;
+
+    const bar = createTelemetryBar("telemetry-bar-container", { title: "SIRIN BASE STATION" });
+    const status = createTelemetryStatus("telemetry-status-container");
+    const updateAltitude = createAltitudeBar("altitude-bar-container");
+    const predictor = createApogeePredictor("apogee-predictor-container");
+    let updateOrientation: ((data: any) => void) | null = null;
+    let packetCount = 0;
+
+    createRocketOrientation("rocket-orientation-container").then((fn: any) => {
+      updateOrientation = fn;
+    });
+
+    let addTracePoint: ((pos: any) => void) | null = null;
+    createPositionTrace("position-trace-container").then((t: any) => {
+      addTracePoint = t.addPoint;
+    });
+
+    const startDemod = async () => {
+      const hackrf = await invoke<boolean>("run_lora_demod");
+    }
+
+    //Begins polling the Rust backend. Also handles when they are disconnected
+    const startListening = async () => {
+      if (listeningStarted) {
+        return;
+      }
+      listeningStarted = false;
+      try {
+        const usbAvailable = await invoke<boolean>("check_usb")
+        const loraAvailable = await invoke<boolean>("check_hackrf")
+        //console.log("USB: " + usbAvailable);
+        //console.log("Lora: " + loraAvailable);
+        //console.log("Listening started: " + listeningStarted);
+        if (loraAvailable && !listeningStarted) {
+          invoke("listen_to_lora", { onLoraConnMsg: onLoraConnMsg, onPacket: onPacket });
+          const connected = await invoke<boolean>("check_hackrf");
+          setHackrfConnected(connected);
+          listeningStarted = true;
+          console.log("Radio connected, connection established!");
+        }
+        else if (!loraAvailable && listeningStarted){
+          listeningStarted = false;
+          console.log("Radio disconnected");
+        }
+        else if (usbAvailable && !listeningStarted) {
+          invoke("listen_to_usb", { onUsbConnMsg: onUsbMsg, onPacket: onPacket });
+          const connected = await invoke<boolean>("check_usb");
+          setUsbConnected(connected);
+          listeningStarted = true;
+          console.log("USB connected, connection established!");
+        }
+        else if (!usbAvailable && listeningStarted){
+          listeningStarted = false;
+          console.log("USB disconnected");
+        }
+      } catch (e) {
+        invoke("listen_to_lora", { onLoraConnMsg: onLoraConnMsg, onPacket: onPacket });
+        console.log("Listening attempt failed. Call listen to lora");
+      }
+    };
+
+    //Attempts to run lora_demod
+    try {
+      console.log("trying to run hackrf...");
+      startDemod();
+      console.log("lora_demod.sh successfully ran");
+    } catch (e) {
+      console.log("lora_demod.sh could not be run"); 
+    }
+
+    
+    //Retries connections every 2 seconds
+    console.log("Trying to start listening...");
+    startListening();
+    const interval = setInterval(startListening, 2000);
+
+
+    // Packet rate counter — resets every second
+    const rateInterval = setInterval(() => {
+      setPacketRate(packetCount);
+      packetCount = 0;
+    }, 1000);
+
+    const onPacket = new Channel();
+    onPacket.onmessage = (msg: any) => {
+      console.log("New message!!!");
+      //Update packet counter
+      packetCount++;
+      const logEntry = msg.packet?.packet?.LogEntry;
+      if (!logEntry) return;
+
+      // Cache whichever type just arrived
+      if (logEntry.log?.Data){
+        lastData  = logEntry.log.Data;
+        console.log("DATA:", JSON.stringify(lastData, null, 2));
+      }
+      if (logEntry.log?.State){
+        lastState = logEntry.log.State;
+        console.log("STATE:", JSON.stringify(lastState, null, 2));
+      }
+
+      //Add the first 3D position onto the map
+      if (logEntry.log?.State && addTracePoint) {
+        const pos = logEntry.log.State.nominal?.pos;
+        if (pos) addTracePoint(pos);
+      }
+
+      // Update altitude/accel from latest Data
+      if (lastData) {
+        let accelG = null;
+        if (lastData.imu.accel.Ok) {
+          const { x, y, z } = lastData.imu.accel.Ok;
+          accelG = Math.sqrt(x*x + y*y + z*z) / 1_000_000;
+        }
+        if (lastState) {
+          //Coutn satellites
+          status.onPacket(lastState?.gps_fix?.satellites ?? null);
+          let velocityFtS = null;
+          if (lastState?.nominal?.vel) {
+            //Predict apogee
+            predictor.update({
+              altitude: lastState.altitude,
+              velX:     lastState.nominal.vel.x,
+              apogee:   lastState.apogee,
+            });
+            //Calculate total velocity
+            const { x, y, z } = lastState.nominal.vel;
+            const mps = Math.sqrt(x*x + y*y + z*z);
+            velocityFtS = mps * 3.28084;
+          }
+          updateAltitude(lastState.altitude);
+          bar.update({ velocity: velocityFtS, altitude: lastState.altitude, acceleration: accelG, mode: lastState.mode });
+        } /*else {
+          bar.update({ altitude: lastData.altitude, acceleration: accelG });
+        }*/
+      }
+
+      // Update orientation from latest State
+      if (updateOrientation) {
+        const quat = lastState?.nominal?.rot_quaternion;
+        if (quat) {
+          updateOrientation({ quat });
+        }
+      }
+    };
+
+    const onLoraConnMsg = new Channel();
+    onLoraConnMsg.onmessage = (msg: any) => {
+      console.log("LoRa connection status:", msg);
+    };
+
+    const onUsbMsg = new Channel();
+    onUsbMsg.onmessage = (msg: any) => {
+      console.log("USB connection status:", msg);
+    };
+
+    // Auto-detect: try USB first, fall back to LoRa
+    // Rust side retries connection when needed
+    
+
+    return () => {
+      clearInterval(interval);
+      clearInterval(rateInterval);
+      bar.remove();
+      status.remove();
+      predictor.remove();
+      invoke("stop_usb").catch(() => {});
+      listeningStarted = false;
+    };
+  }, []);
+
+  return (
+    <main className="min-h-screen p-6 bg-gray-900 relative">
+      <button
+        onClick={goBack}
+        className="absolute top-4 left-4 px-3 py-1 bg-gray-300 rounded hover:bg-gray-400"
+      >
+        ← Back
+      </button>
+
+      <div className="absolute top-4 right-4 flex flex-col gap-1">
+        {/* HackRF status */}
+        <div className={`px-3 py-1 rounded text-sm font-mono
+          ${hackrfConnected === null ? "bg-gray-300 text-gray-700" :
+            hackrfConnected ? "bg-green-500 text-white" : "bg-red-500 text-white"}`}>
+          {hackrfConnected === null ? "Checking HackRF..." :
+           hackrfConnected ? "● HackRF Connected" : "● HackRF Not Found"}
+        </div>
+
+        {/* Packet rate sub-status — only show when HackRF is connected */}
+        {hackrfConnected && (
+          <div className={`px-2 py-0.5 rounded text-xs font-mono text-center
+            ${packetRate >= 4 ? "bg-green-900 text-green-300" :
+              packetRate > 0  ? "bg-yellow-900 text-yellow-300" :
+                                "bg-red-900 text-red-300"}`}>
+            {packetRate >= 4
+              ? `▲ ${packetRate}/s — Good signal`
+              : packetRate > 0
+              ? `▲ ${packetRate}/s — Weak signal`
+              : `✕ 0/s — No packets`}
+          </div>
+        )}
+
+        {/* USB status */}
+        <div className={`px-3 py-1 rounded text-sm font-mono
+          ${usbConnected === null ? "bg-gray-300 text-gray-700" :
+            usbConnected ? "bg-green-500 text-white" : "bg-red-500 text-white"}`}>
+          {usbConnected === null ? "Checking USB..." :
+           usbConnected ? "● Sirin Connected" : "● Sirin Not Found"}
+        </div>
+      </div>
+
+      <Window x={5} y={10} width={10} height={70}>
+        <div id="altitude-bar-container" className="h-full w-full"></div>
+      </Window>
+
+      <Window x={75} y={50} width={20} height={40}>
+        <div className="h-full flex items-center justify-center text-gray-400">
+        </div>
+      </Window>
+
+      <Window x={40} y={45} width={30} height={30}>
+        <div className="h-full flex items-center justify-center text-gray-400">
+        </div>
+      </Window>
+
+      <Window x={20} y={10} width={60} height={60}>
+        <div id="rocket-orientation-container" className="h-full w-full" />
+      </Window>
+
+      <Window x={80} y={15} width={15} height={20}>
+        <div className="h-full flex items-center justify-center">
+          <div style={{
+            borderRadius: "50%",
+            border: "4px solid #00d5ed",
+            padding: "4px",
+            display: "inline-flex",
+            boxShadow: "0 0 12px rgba(0,229,255,0.4)",
+          }}>
+            <img
+              src="./images/CRT.jpg"
+              style={{
+                width: "100%",
+                height: "100%",
+                objectFit: "cover",
+                borderRadius: "50%",
+                display: "block",
+              }}
+            />
+          </div>
+        </div>
+      </Window>
+
+      <Window x={0} y={90} width={100} height={10}>
+        <div id="telemetry-bar-container" className="h-full w-full" />
+      </Window>
+
+      <Window x={15} y={25} width={15} height={40}>
+        <div id="telemetry-status-container" className="h-full w-full" />
+      </Window>
+
+      <Window x={70} y={45} width={30} height={45}>
+        <div id="position-trace-container" className="h-full w-full" />
+      </Window>
+
+      <Window x={15} y={10} width={20} height={10}>
+        <div id="apogee-predictor-container" className="h-full w-full" />
+      </Window>
+    </main>
+  );
+}

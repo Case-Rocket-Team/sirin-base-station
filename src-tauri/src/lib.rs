@@ -1,8 +1,21 @@
 use serde::Serialize;
-use sirin_shared::{packet::{OutPacket, RadioPacket}, song::{FromSong, SongSize, ToSong}, state::NominalState};
+use sirin_shared::{packet::{OutPacket, RadioPacket, InPacket}, song::{FromSong, SongSize, ToSong}, state::NominalState};
+use sirin_shared::usb::{USB_EP_IN_ADDR, USB_EP_OUT_ADDR, USB_PID, USB_VID};
+use sirin_shared::packet::MAX_OUT_PACKET_SIZE;
 use tauri::{AppHandle, Listener, ipc::Channel};
 use futures_util::StreamExt;
-use tokio_tungstenite::{connect_async, tungstenite::protocol::Message};
+use tokio_tungstenite::{connect_async, tungstenite::{connect, protocol::Message}};
+use std::process::Command;
+use std::time::Duration;
+use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
+use std::sync::OnceLock;
+
+// Global cancel flag — set to true to stop the USB loop
+static USB_CANCEL: OnceLock<Arc<AtomicBool>> = OnceLock::new();
+
+fn usb_cancel_flag() -> Arc<AtomicBool> {
+    USB_CANCEL.get_or_init(|| Arc::new(AtomicBool::new(false))).clone()
+}
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase", rename_all_fields = "camelCase")]
@@ -10,6 +23,14 @@ pub enum LoraConnMsg {
     SocketConnected,
     Error(String),
     SocketClosed,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase", rename_all_fields = "camelCase")]
+pub enum UsbConnMsg {
+    Connected,
+    Error(String),
+    Disconnected,
 }
 
 #[derive(Clone, Serialize)]
@@ -24,21 +45,18 @@ async fn listen_to_lora(
     on_lora_conn_msg: Channel<LoraConnMsg>,
     on_packet: Channel<LoraPacketRx>
 ) {
-    let (mut stream, response) = match connect_async("ws://localhost:8765").await {
+    println!("Listen to lora called!");
+    let (mut stream, _response) = match connect_async("ws://localhost:8765").await {
         Ok(ws) => ws,
         Err(e) => {
             on_lora_conn_msg.send(LoraConnMsg::Error(e.to_string())).unwrap();
             return;
         }
     };
-
+    println!("WebSocketStream opened!");
     let _ = on_lora_conn_msg.send(LoraConnMsg::SocketConnected);
-
     loop {
-        let Some(next) = stream.next().await else {
-            break;
-        };
-
+        let Some(next) = stream.next().await else { break; };
         let msg = match next {
             Ok(msg) => msg,
             Err(e) => {
@@ -46,24 +64,232 @@ async fn listen_to_lora(
                 continue;
             }
         };
-
-        let Message::Binary(data) = msg else {
-            continue;
-        };
-
+        println!("Message found!");
+        let Message::Binary(data) = msg else {println!("No data received..."); continue; };
+        println!("Binary data received!");
         let packet = RadioPacket::<OutPacket>::from_song(&data).unwrap();
         let _ = on_packet.send(LoraPacketRx {
             packet: serde_json::to_value(packet).unwrap()
         });
     }
-
     let _ = on_lora_conn_msg.send(LoraConnMsg::SocketClosed);
+    println!("Message sent over websocket!");
+}
+
+/// Call this when the frontend unmounts — stops the USB retry loop cleanly
+#[tauri::command]
+async fn stop_usb() {
+    usb_cancel_flag().store(true, Ordering::SeqCst);
+}
+
+#[tauri::command]
+async fn listen_to_usb(
+    on_usb_conn_msg: Channel<UsbConnMsg>,
+    on_packet: Channel<LoraPacketRx>
+) {
+    // Reset cancel flag for this new invocation
+    usb_cancel_flag().store(false, Ordering::SeqCst);
+
+    loop {
+        // Check cancel before each retry
+        if usb_cancel_flag().load(Ordering::SeqCst) {
+            break;
+        }
+
+        let cancel = usb_cancel_flag();
+
+        tokio::task::spawn_blocking({
+            let on_usb_conn_msg = on_usb_conn_msg.clone();
+            let on_packet = on_packet.clone();
+            let cancel = cancel.clone();
+            move || {
+                if cancel.load(Ordering::SeqCst) { return; }
+
+                // ── Force-release any lingering interface claim ────────────
+                let _ = rusb::devices()
+                    .unwrap()
+                    .iter()
+                    .find(|d| {
+                        let desc = d.device_descriptor().unwrap();
+                        desc.vendor_id() == USB_VID && desc.product_id() == USB_PID
+                    })
+                    .and_then(|d| d.open().ok())
+                    .map(|h| { let _ = h.release_interface(0); });
+
+                std::thread::sleep(Duration::from_millis(500));
+
+                if cancel.load(Ordering::SeqCst) { return; }
+
+                // ── Find device ───────────────────────────────────────────
+                let device = rusb::devices()
+                    .unwrap()
+                    .iter()
+                    .find(|d| {
+                        let desc = d.device_descriptor().unwrap();
+                        desc.vendor_id() == USB_VID && desc.product_id() == USB_PID
+                    });
+
+                let device = match device {
+                    Some(d) => d,
+                    None => {
+                        let _ = on_usb_conn_msg.send(UsbConnMsg::Error("No Sirin USB device found".into()));
+                        return;
+                    }
+                };
+
+                // ── Open device ───────────────────────────────────────────
+                let handle = match device.open() {
+                    Ok(h) => h,
+                    Err(e) => {
+                        let _ = on_usb_conn_msg.send(UsbConnMsg::Error(format!("Failed to open USB: {}", e)));
+                        return;
+                    }
+                };
+
+                let _ = handle.detach_kernel_driver(0);
+                std::thread::sleep(Duration::from_millis(200));
+
+                if cancel.load(Ordering::SeqCst) { return; }
+
+                if let Err(e) = handle.claim_interface(0) {
+                    let _ = on_usb_conn_msg.send(UsbConnMsg::Error(format!("Failed to claim interface: {}", e)));
+                    return;
+                }
+
+                let _ = on_usb_conn_msg.send(UsbConnMsg::Connected);
+
+                // ── Send Tail(true) to start streaming ────────────────────
+                let tail_packet = InPacket::Tail(true);
+                let mut cmd_buf = [0u8; MAX_OUT_PACKET_SIZE];
+                if let Err(e) = tail_packet.to_song(&mut cmd_buf) {
+                    let _ = on_usb_conn_msg.send(UsbConnMsg::Error(format!("Failed to encode Tail command: {:?}", e)));
+                    let _ = handle.release_interface(0);
+                    return;
+                }
+                if let Err(e) = handle.write_bulk(
+                    USB_EP_OUT_ADDR,
+                    &cmd_buf[0..tail_packet.song_size()],
+                    Duration::from_secs(5)
+                ) {
+                    let _ = on_usb_conn_msg.send(UsbConnMsg::Error(format!("Failed to send Tail command: {}", e)));
+                    let _ = handle.release_interface(0);
+                    return;
+                }
+
+                // ── Drain stale data from USB buffer ──────────────────────
+                {
+                    let mut drain_buf = vec![0u8; MAX_OUT_PACKET_SIZE * 128];
+                    for _ in 0..10 {
+                        match handle.read_bulk(USB_EP_IN_ADDR, &mut drain_buf, Duration::from_millis(50)) {
+                            Ok(_) => continue,
+                            Err(_) => break,
+                        }
+                    }
+                }
+
+                // ── Read loop ─────────────────────────────────────────────
+                let mut buf = vec![0u8; MAX_OUT_PACKET_SIZE * 128 * 100];
+                loop {
+                    if cancel.load(Ordering::SeqCst) {
+                        let _ = handle.release_interface(0);
+                        return;
+                    }
+
+                    let len = match handle.read_bulk(USB_EP_IN_ADDR, &mut buf, Duration::from_secs(0)) {
+                        Ok(len) => len,
+                        Err(rusb::Error::Timeout) => continue,
+                        Err(rusb::Error::NoDevice) => {
+                            let _ = on_usb_conn_msg.send(UsbConnMsg::Disconnected);
+                            let _ = handle.release_interface(0);
+                            return;
+                        }
+                        Err(e) => {
+                            let _ = on_usb_conn_msg.send(UsbConnMsg::Error(format!("USB read error: {}", e)));
+                            let _ = handle.release_interface(0);
+                            return;
+                        }
+                    };
+
+                    if len == 0 { continue; }
+
+                    let packet = match OutPacket::from_song(&buf[0..len]) {
+                        Ok(p) => p,
+                        Err(e) => {
+                            let _ = on_usb_conn_msg.send(UsbConnMsg::Error(format!("Decode error: {:?}", e)));
+                            continue;
+                        }
+                    };
+
+                    let value = serde_json::json!({
+                        "id": 0,
+                        "callsign": [],
+                        "packet": serde_json::to_value(&packet).unwrap()
+                    });
+
+                    let _ = on_packet.send(LoraPacketRx { packet: value });
+                }
+            }
+        }).await.ok();
+
+        // Wait 3s before retrying — gives OS time to fully release interface
+        // But bail out early if cancelled during the sleep
+        for _ in 0..30 {
+            if usb_cancel_flag().load(Ordering::SeqCst) { return; }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+    }
+}
+
+
+//TODO: This says the hackRF is connected if port 8765 is opened by anything, not just the HackRF
+#[tauri::command]
+async fn check_hackrf() -> bool {
+    match connect_async("ws://localhost:8765").await {
+        Ok(_ws) => true,
+        Err(_e) => false
+    }
+}
+
+#[tauri::command]
+async fn check_usb() -> bool {
+    rusb::devices()
+        .map(|list| list.iter().any(|d| {
+            let desc = d.device_descriptor().unwrap();
+            desc.vendor_id() == USB_VID && desc.product_id() == USB_PID
+        }))
+        .unwrap_or(false)
+}
+
+#[tauri::command]
+async fn run_lora_demod() {
+    let exe_path = std::env::current_exe().expect("Failed to get executable path");
+    let project_root = exe_path
+        .parent()
+        .and_then(|p| p.parent()) 
+        .and_then(|p| p.parent()) 
+        .and_then(|p| p.parent())
+        .expect("Failed to get project root");
+
+    let script_path = project_root.join("lora_demod/lora_demod.sh");
+    let script_dir = project_root.join("lora_demod");
+
+    let _ = Command::new("sh")
+        .arg(script_path)
+        .current_dir(script_dir)
+        .spawn();
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![listen_to_lora])
+        .invoke_handler(tauri::generate_handler![
+            run_lora_demod,
+            listen_to_lora,
+            listen_to_usb,
+            stop_usb,
+            check_hackrf,
+            check_usb,
+        ])
         .plugin(tauri_plugin_opener::init())
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

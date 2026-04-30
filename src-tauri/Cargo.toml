@@ -26,4 +26,5 @@ sirin-shared = { path = "../../sirin/sirin-shared", features = ["serde"] }
 tokio = { version = "1", features = ["full"] }
 tokio-tungstenite = "0.21"
 futures-util = "0.3"
+rusb = "0.9"
 

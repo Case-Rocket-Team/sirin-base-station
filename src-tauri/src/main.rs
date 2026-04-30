@@ -3,4 +3,5 @@
 
 fn main() {
     sirin_base_station_lib::run();
+    //sirin_base_station_lib::run_lora_demod();
 }
