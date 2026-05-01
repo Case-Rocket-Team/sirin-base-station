@@ -95,7 +95,7 @@ export default function TelemetryPanel({ goBack }: Props) {
     //Attempts to run lora_demod
     try {
       console.log("trying to run hackrf...");
-      startDemod();
+      //startDemod();
       console.log("lora_demod.sh successfully ran");
     } catch (e) {
       console.log("lora_demod.sh could not be run"); 

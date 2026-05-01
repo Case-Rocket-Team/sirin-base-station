@@ -21,7 +21,10 @@ fn usb_cancel_flag() -> Arc<AtomicBool> {
 #[serde(rename_all = "camelCase", rename_all_fields = "camelCase")]
 pub enum LoraConnMsg {
     SocketConnected,
+    /// Socket-level failure (connect, read, close).
     Error(String),
+    /// Per-packet decode failure — non-fatal, the loop keeps running.
+    DecodeError(String),
     SocketClosed,
 }
 
@@ -46,33 +49,44 @@ async fn listen_to_lora(
     on_packet: Channel<LoraPacketRx>
 ) {
     println!("Listen to lora called!");
-    let (mut stream, _response) = match connect_async("ws://localhost:8765").await {
+    let (mut stream, _response) = match connect_async("ws://127.0.0.1:8765").await {
         Ok(ws) => ws,
         Err(e) => {
-            on_lora_conn_msg.send(LoraConnMsg::Error(e.to_string())).unwrap();
+            let _ = on_lora_conn_msg.send(LoraConnMsg::Error(e.to_string()));
             return;
         }
     };
     println!("WebSocketStream opened!");
     let _ = on_lora_conn_msg.send(LoraConnMsg::SocketConnected);
+
     loop {
         let Some(next) = stream.next().await else { break; };
         let msg = match next {
             Ok(msg) => msg,
             Err(e) => {
-                on_lora_conn_msg.send(LoraConnMsg::Error(e.to_string())).unwrap();
+                let _ = on_lora_conn_msg.send(LoraConnMsg::Error(e.to_string()));
                 continue;
             }
         };
-        println!("Message found!");
-        let Message::Binary(data) = msg else {println!("No data received..."); continue; };
-        println!("Binary data received!");
+
+        let Message::Binary(data) = msg else {
+            continue;
+        };
         let packet = match RadioPacket::<OutPacket>::from_song(&data) {
             Ok(p) => p,
             Err(e) => {
-                let _ = on_lora_conn_msg.send(LoraConnMsg::Error(
-                    format!("Decode error: {:?}", e)
-                ));
+                let head_len = data.len().min(16);
+                let tail_start = data.len().saturating_sub(16);
+                eprintln!(
+                    "lora decode failed: {:?}  len={}  first{}={:02x?}  last{}={:02x?}",
+                    e,
+                    data.len(),
+                    head_len,
+                    &data[..head_len],
+                    data.len() - tail_start,
+                    &data[tail_start..],
+                );
+                let _ = on_lora_conn_msg.send(LoraConnMsg::DecodeError(format!("{:?}", e)));
                 continue;
             }
         };
@@ -80,8 +94,8 @@ async fn listen_to_lora(
         let payload = match serde_json::to_value(&packet) {
             Ok(v) => v,
             Err(e) => {
-                let _ = on_lora_conn_msg.send(LoraConnMsg::Error(
-                    format!("Serialize error: {}", e)
+                let _ = on_lora_conn_msg.send(LoraConnMsg::DecodeError(
+                    format!("serialize error: {}", e)
                 ));
                 continue;
             }
@@ -89,8 +103,9 @@ async fn listen_to_lora(
 
         let _ = on_packet.send(LoraPacketRx { packet: payload });
     }
+
     let _ = on_lora_conn_msg.send(LoraConnMsg::SocketClosed);
-    println!("Message sent over websocket!");
+    println!("LoRa websocket loop ended.");
 }
 
 /// Call this when the frontend unmounts — stops the USB retry loop cleanly
@@ -240,7 +255,7 @@ async fn listen_to_usb(
                     let value = serde_json::json!({
                         "id": 0,
                         "callsign": [],
-                        "packet": serde_json::to_value(&packet).unwrap()
+                        "packet": serde_json::to_value(&packet).unwrap_or(serde_json::Value::Null)
                     });
 
                     let _ = on_packet.send(LoraPacketRx { packet: value });
@@ -261,7 +276,7 @@ async fn listen_to_usb(
 //TODO: This says the hackRF is connected if port 8765 is opened by anything, not just the HackRF
 #[tauri::command]
 async fn check_hackrf() -> bool {
-    match connect_async("ws://localhost:8765").await {
+    match connect_async("ws://127.0.0.1:8765").await {
         Ok(_ws) => true,
         Err(_e) => false
     }
@@ -271,8 +286,10 @@ async fn check_hackrf() -> bool {
 async fn check_usb() -> bool {
     rusb::devices()
         .map(|list| list.iter().any(|d| {
-            let desc = d.device_descriptor().unwrap();
-            desc.vendor_id() == USB_VID && desc.product_id() == USB_PID
+            match d.device_descriptor() {
+                Ok(desc) => desc.vendor_id() == USB_VID && desc.product_id() == USB_PID,
+                Err(_) => false,
+            }
         }))
         .unwrap_or(false)
 }
@@ -282,8 +299,8 @@ async fn run_lora_demod() {
     let exe_path = std::env::current_exe().expect("Failed to get executable path");
     let project_root = exe_path
         .parent()
-        .and_then(|p| p.parent()) 
-        .and_then(|p| p.parent()) 
+        .and_then(|p| p.parent())
+        .and_then(|p| p.parent())
         .and_then(|p| p.parent())
         .expect("Failed to get project root");
 
