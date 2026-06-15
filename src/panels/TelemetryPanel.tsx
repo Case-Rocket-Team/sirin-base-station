@@ -26,6 +26,9 @@ export default function TelemetryPanel({ goBack }: Props) {
   const [packetRate, setPacketRate] = useState<number>(0);
 
   useEffect(() => {
+    const onPacket = new Channel();
+    const onLoraConnMsg = new Channel();
+    const onUsbMsg = new Channel();
     listeningStarted = false;
 
     // Cache latest of each packet type independently
@@ -57,50 +60,41 @@ export default function TelemetryPanel({ goBack }: Props) {
       if (listeningStarted) {
         return;
       }
-      listeningStarted = false;
-      try {
-        const usbAvailable = await invoke<boolean>("check_usb")
-        const loraAvailable = await invoke<boolean>("check_hackrf")
-        //console.log("USB: " + usbAvailable);
-        //console.log("Lora: " + loraAvailable);
-        //console.log("Listening started: " + listeningStarted);
-        if (loraAvailable && !listeningStarted) {
-          invoke("listen_to_lora", { onLoraConnMsg: onLoraConnMsg, onPacket: onPacket });
-          const connected = await invoke<boolean>("check_hackrf");
-          setHackrfConnected(connected);
-          listeningStarted = true;
-          console.log("Radio connected, connection established!");
-        }
-        else if (!loraAvailable && listeningStarted){
-          listeningStarted = false;
-          console.log("Radio disconnected");
-        }
-        else if (usbAvailable && !listeningStarted) {
-          invoke("listen_to_usb", { onUsbConnMsg: onUsbMsg, onPacket: onPacket });
-          const connected = await invoke<boolean>("check_usb");
-          setUsbConnected(connected);
-          listeningStarted = true;
-          console.log("USB connected, connection established!");
-        }
-        else if (!usbAvailable && listeningStarted){
-          listeningStarted = false;
-          console.log("USB disconnected");
-        }
-      } catch (e) {
+      const usbAvailable = await invoke<boolean>("check_usb")
+      const loraAvailable = await invoke<boolean>("check_hackrf")
+      //console.log("USB: " + usbAvailable);
+      //console.log("Lora: " + loraAvailable);
+      //console.log("Listening started: " + listeningStarted);
+      if (loraAvailable && !listeningStarted) {
         invoke("listen_to_lora", { onLoraConnMsg: onLoraConnMsg, onPacket: onPacket });
-        console.log("Listening attempt failed. Call listen to lora");
+        const connected = await invoke<boolean>("check_hackrf");
+        setHackrfConnected(connected);
+        listeningStarted = true;
+        try {
+          console.log("trying to run hackrf...");
+          startDemod();
+          console.log("lora_demod.sh successfully ran");
+        } catch (e) {
+          console.log("lora_demod.sh could not be run"); 
+        }
+        console.log("Radio connected, connection established!");
+      }
+      else if (!loraAvailable && listeningStarted){
+        listeningStarted = false;
+        console.log("Radio disconnected");
+      }
+      else if (usbAvailable && !listeningStarted) {
+        invoke("listen_to_usb", { onUsbConnMsg: onUsbMsg, onPacket: onPacket });
+        const connected = await invoke<boolean>("check_usb");
+        setUsbConnected(connected);
+        listeningStarted = true;
+        console.log("USB connected, connection established!");
+      }
+      else if (!usbAvailable && listeningStarted){
+        listeningStarted = false;
+        console.log("USB disconnected");
       }
     };
-
-    //Attempts to run lora_demod
-    try {
-      console.log("trying to run hackrf...");
-      startDemod();
-      console.log("lora_demod.sh successfully ran");
-    } catch (e) {
-      console.log("lora_demod.sh could not be run"); 
-    }
-
     
     //Retries connections every 2 seconds
     console.log("Trying to start listening...");
@@ -114,7 +108,6 @@ export default function TelemetryPanel({ goBack }: Props) {
       packetCount = 0;
     }, 1000);
 
-    const onPacket = new Channel();
     onPacket.onmessage = (msg: any) => {
       console.log("New message!!!");
       //Update packet counter
@@ -177,12 +170,10 @@ export default function TelemetryPanel({ goBack }: Props) {
       }
     };
 
-    const onLoraConnMsg = new Channel();
     onLoraConnMsg.onmessage = (msg: any) => {
       console.log("LoRa connection status:", msg);
     };
 
-    const onUsbMsg = new Channel();
     onUsbMsg.onmessage = (msg: any) => {
       console.log("USB connection status:", msg);
     };

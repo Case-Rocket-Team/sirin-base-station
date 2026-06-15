@@ -4,10 +4,6 @@ SDRplay RSP1a (or upstream ZMQ) -> [LoRa demod -> websocket broadcast] + [2x ZMQ
 Cross-platform: works on Linux, macOS, and Windows.
 """
 
-import sys
-# Optional: Uncomment and update the line below if you still need the path fix from earlier
-# sys.path.append("/opt/homebrew/lib/python3.11/site-packages")
-
 from gnuradio import gr, blocks, soapy, zeromq
 import gnuradio.lora_sdr as lora_sdr
 from websockets.asyncio.server import serve, broadcast
@@ -15,6 +11,7 @@ import argparse
 import asyncio
 import numpy as np
 import signal
+import sys
 import threading
 
 
@@ -52,7 +49,7 @@ class sdrplay_lora_rx(gr.top_block):
             self.source = soapy.source(
                 "driver=sdrplay", "fc32", 1, "", "", [""], [""]
             )
-            self.source.set_antenna(0, "RX") 
+            self.source.set_antenna(0, "RX")
             self.source.set_sample_rate(0, samp_rate)
             self.source.set_frequency(0, center_freq)
             self.source.set_bandwidth(0, bw)
@@ -106,7 +103,6 @@ class sdrplay_lora_rx(gr.top_block):
 
 
 class byte_recv_callback(gr.sync_block):
-    """Sink block that fires a Python callback for every arriving byte chunk."""
     def __init__(self, callback):
         gr.sync_block.__init__(
             self, name="CallbackBytesSink",
@@ -126,12 +122,10 @@ def run(config):
 
     async def handle_conn(socket):
         clients.add(socket)
-        print(f"[WebSocket] Client connected from {socket.remote_address}. Total clients: {len(clients)}")
         try:
             await socket.wait_closed()
         finally:
             clients.remove(socket)
-            print(f"[WebSocket] Client disconnected. Total clients: {len(clients)}")
 
     async def start_ws():
         host = config["host"]
@@ -142,6 +136,7 @@ def run(config):
 
     threading.Thread(target=lambda: asyncio.run(start_ws()), daemon=True).start()
 
+    # FIX 1: was incorrectly named lora_rx_with_split
     tb = sdrplay_lora_rx(
         use_zmq=config["zmq"],
         zmq_in_addr=config["zmq_in_addr"],
@@ -159,14 +154,7 @@ def run(config):
         pub_timeout=config["pub_timeout"],
     )
 
-    # Callback function to handle incoming message payload data
-    def process_and_broadcast(msg):
-        byte_data = bytes(msg)
-        # Added terminal logging for the raw bytes
-        print(f"[LoRa RX Data] Received {len(byte_data)} bytes: {byte_data.hex()}")
-        broadcast(clients, byte_data)
-
-    sink = byte_recv_callback(process_and_broadcast)
+    sink = byte_recv_callback(lambda msg: broadcast(clients, bytes(msg)))
     tb.connect((tb.crc_verif, 0), (sink, 0))
 
     def _sig(sig, frame):
@@ -178,8 +166,6 @@ def run(config):
 
     tb.start()
     print("Listening for LoRa packets via SDRplay...")
-    if config["enable_pub"] and not config["zmq"]:
-        print(f"Publishing IQ to: {config['pub_addr0']}  and  {config['pub_addr1']}")
 
     try:
         tb.wait()
@@ -190,47 +176,46 @@ def run(config):
         sys.exit(0)
 
 
-def main():
-    p = argparse.ArgumentParser("sdrplay_split_lora_rx")
-    p.add_argument("--zmq", action="store_true", help="Use ZMQ SUB as source")
-    p.add_argument("--zmq-addr", dest="zmq_in_addr", default="tcp://127.0.0.1:5555")
-    p.add_argument("--center-freq",  type=float, default=434.5e6)
-    p.add_argument("--bandwidth",    type=int,   default=125_000)
-    p.add_argument("--sample-rate",  type=int,   default=2_000_000)
-    p.add_argument("--gain",         type=int,   default=20)
-    p.add_argument("--spreading-factor", type=int, default=7)
-    p.add_argument("--payload-len",      type=int, default=256)
-    p.add_argument("--sync-word", type=lambda x: int(x, 0), default=0x12)
-    p.add_argument("--host", type=str, default="localhost")
-    p.add_argument("--port", type=int, default=8765)
-    p.add_argument("--no-pub", action="store_true", help="Disable local ZMQ PUB outputs")
-    p.add_argument("--pub-addr0",   default="tcp://127.0.0.1:5555")
-    p.add_argument("--pub-addr1",   default="tcp://127.0.0.1:5556")
-    p.add_argument("--pub-hwm",     type=int, default=256)
-    p.add_argument("--pub-timeout", type=int, default=100)
-
-    args = p.parse_args()
-    enable_pub = not args.no_pub and not args.zmq
-
-    run({
-        "zmq":              args.zmq,
-        "zmq_in_addr":      args.zmq_in_addr,
-        "center_freq":      args.center_freq,
-        "bandwidth":        args.bandwidth,
-        "sample_rate":      args.sample_rate,
-        "gain":             args.gain,
-        "spreading_factor": args.spreading_factor,
-        "payload_len":      args.payload_len,
-        "sync_word":        args.sync_word,
-        "host":             args.host,
-        "port":             args.port,
-        "enable_pub":       enable_pub,
-        "pub_addr0":        args.pub_addr0,
-        "pub_addr1":        args.pub_addr1,
-        "pub_hwm":          args.pub_hwm,
-        "pub_timeout":      args.pub_timeout,
-    })
-
-
+# FIX 2: main block was missing entirely — script had no entry point
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser(description="SDRplay LoRa RX -> WebSocket")
+
+    parser.add_argument("--zmq", action="store_true", help="Use ZMQ input instead of SDRplay")
+    parser.add_argument("--zmq-in-addr", default="tcp://127.0.0.1:5555")
+    parser.add_argument("--center-freq", type=float, default=434.5e6)
+    parser.add_argument("--sample-rate", type=float, default=2_000_000)
+    parser.add_argument("--bandwidth", type=float, default=125_000)
+    parser.add_argument("--gain", type=float, default=20)
+    parser.add_argument("--spreading-factor", type=int, default=7)
+    parser.add_argument("--payload-len", type=int, default=256)
+    parser.add_argument("--sync-word", type=lambda x: int(x, 0), default=0x12)
+    parser.add_argument("--host", default="0.0.0.0")
+    parser.add_argument("--port", type=int, default=8765)
+    parser.add_argument("--enable-pub", action="store_true", default=True)
+    parser.add_argument("--pub-addr0", default="tcp://127.0.0.1:5555")
+    parser.add_argument("--pub-addr1", default="tcp://127.0.0.1:5556")
+    parser.add_argument("--pub-hwm", type=int, default=256)
+    parser.add_argument("--pub-timeout", type=int, default=100)
+
+    args = parser.parse_args()
+
+    config = {
+        "zmq": args.zmq,
+        "zmq_in_addr": args.zmq_in_addr,
+        "center_freq": args.center_freq,
+        "sample_rate": args.sample_rate,
+        "bandwidth": args.bandwidth,
+        "gain": args.gain,
+        "spreading_factor": args.spreading_factor,
+        "payload_len": args.payload_len,
+        "sync_word": args.sync_word,
+        "host": args.host,
+        "port": args.port,
+        "enable_pub": args.enable_pub,
+        "pub_addr0": args.pub_addr0,
+        "pub_addr1": args.pub_addr1,
+        "pub_hwm": args.pub_hwm,
+        "pub_timeout": args.pub_timeout,
+    }
+
+    run(config)

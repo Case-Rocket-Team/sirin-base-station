@@ -7,14 +7,23 @@ use futures_util::StreamExt;
 use tokio_tungstenite::{connect_async, tungstenite::{connect, protocol::Message}};
 use std::process::Command;
 use std::time::Duration;
-use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
+use std::sync::{Arc, Mutex, atomic::{AtomicBool, Ordering}};
 use std::sync::OnceLock;
 
 // Global cancel flag — set to true to stop the USB loop
-static USB_CANCEL: OnceLock<Arc<AtomicBool>> = OnceLock::new();
+static USB_CANCEL: std::sync::OnceLock<Arc<Mutex<Arc<AtomicBool>>>> = std::sync::OnceLock::new();
 
-fn usb_cancel_flag() -> Arc<AtomicBool> {
-    USB_CANCEL.get_or_init(|| Arc::new(AtomicBool::new(false))).clone()
+fn replace_cancel_flag() -> Arc<AtomicBool> {
+    let new_flag = Arc::new(AtomicBool::new(false));
+    let global = USB_CANCEL.get_or_init(|| Arc::new(Mutex::new(new_flag.clone())));
+    *global.lock().unwrap() = new_flag.clone();
+    new_flag
+}
+
+fn get_cancel_flag() -> Arc<AtomicBool> {
+    USB_CANCEL.get()
+        .map(|m| m.lock().unwrap().clone())
+        .unwrap_or_else(|| Arc::new(AtomicBool::new(true))) // safe default
 }
 
 #[derive(Clone, Serialize)]
@@ -79,7 +88,7 @@ async fn listen_to_lora(
 /// Call this when the frontend unmounts — stops the USB retry loop cleanly
 #[tauri::command]
 async fn stop_usb() {
-    usb_cancel_flag().store(true, Ordering::SeqCst);
+    get_cancel_flag().store(true, Ordering::SeqCst);
 }
 
 #[tauri::command]
@@ -88,15 +97,15 @@ async fn listen_to_usb(
     on_packet: Channel<LoraPacketRx>
 ) {
     // Reset cancel flag for this new invocation
-    usb_cancel_flag().store(false, Ordering::SeqCst);
+    replace_cancel_flag().store(false, Ordering::SeqCst);
 
     loop {
         // Check cancel before each retry
-        if usb_cancel_flag().load(Ordering::SeqCst) {
+        if replace_cancel_flag().load(Ordering::SeqCst) {
             break;
         }
 
-        let cancel = usb_cancel_flag();
+        let cancel = replace_cancel_flag();
 
         tokio::task::spawn_blocking({
             let on_usb_conn_msg = on_usb_conn_msg.clone();
@@ -234,7 +243,7 @@ async fn listen_to_usb(
         // Wait 3s before retrying — gives OS time to fully release interface
         // But bail out early if cancelled during the sleep
         for _ in 0..30 {
-            if usb_cancel_flag().load(Ordering::SeqCst) { return; }
+            if replace_cancel_flag().load(Ordering::SeqCst) { return; }
             tokio::time::sleep(Duration::from_millis(100)).await;
         }
     }
@@ -244,10 +253,7 @@ async fn listen_to_usb(
 //TODO: This says the hackRF is connected if port 8765 is opened by anything, not just the HackRF
 #[tauri::command]
 async fn check_hackrf() -> bool {
-    match connect_async("ws://localhost:8765").await {
-        Ok(_ws) => true,
-        Err(_e) => false
-    }
+    tokio::net::TcpStream::connect("127.0.0.1:8765").await.is_ok()
 }
 
 #[tauri::command]
@@ -265,18 +271,27 @@ async fn run_lora_demod() {
     let exe_path = std::env::current_exe().expect("Failed to get executable path");
     let project_root = exe_path
         .parent()
-        .and_then(|p| p.parent()) 
-        .and_then(|p| p.parent()) 
+        .and_then(|p| p.parent())
+        .and_then(|p| p.parent())
         .and_then(|p| p.parent())
         .expect("Failed to get project root");
 
     let script_path = project_root.join("lora_demod/lora_demod.sh");
     let script_dir = project_root.join("lora_demod");
 
-    let _ = Command::new("sh")
+    let store = DEMOD_PROCESS.get_or_init(|| Mutex::new(None));
+    let mut guard = store.lock().unwrap();
+
+    // Kill any existing instance before spawning a new one
+    if let Some(child) = guard.as_mut() {
+        let _ = child.kill();
+    }
+
+    *guard = Command::new("sh")
         .arg(script_path)
         .current_dir(script_dir)
-        .spawn();
+        .spawn()
+        .ok();
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
