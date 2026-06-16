@@ -4,15 +4,13 @@ import { invoke, Channel } from "@tauri-apps/api/core";
 import InitializationPanel from "./panels/InitializationPanel";
 import TelemetryPanel from "./panels/TelemetryPanel";
 import UsbPanel from "./panels/UsbPanel";
+import RawDataPanel from "./panels/RawDataPanel"
 
 function App() {
-  const [data, setData] = useState<string>("no data :(");
   const [activePanel, setActivePanel] =
-    useState<"init" | "telemetry" | "usb">("init");
+    useState<"init" | "telemetry" | "usb" | "rawData">("init");
 
-  const [message, setMessage] = useState<string>("");
-
-  const switchScreen = (panel: "init" | "telemetry" | "usb") => {
+  const switchScreen = (panel: "init" | "telemetry" | "usb" | "rawData") => {
     setActivePanel(panel);
   };
 
@@ -49,6 +47,10 @@ function App() {
 
       {activePanel === "usb" && (
         <UsbPanel goBack={() => switchScreen("init")} />
+      )}
+
+      {activePanel === "rawData" && (
+        <RawDataPanel goBack={() => switchScreen("init")} />
       )}
     </>
   );

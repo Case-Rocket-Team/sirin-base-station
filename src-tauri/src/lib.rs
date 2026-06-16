@@ -48,6 +48,7 @@ pub struct LoraPacketRx {
     packet: serde_json::Value
 }
 
+
 #[tauri::command]
 async fn listen_to_lora(
     app: AppHandle,
@@ -76,10 +77,16 @@ async fn listen_to_lora(
         println!("Message found!");
         let Message::Binary(data) = msg else {println!("No data received..."); continue; };
         println!("Binary data received!");
+        println!("Data length: {} bytes", data.len());
+
+        
         let packet = RadioPacket::<OutPacket>::from_song(&data).unwrap();
         let _ = on_packet.send(LoraPacketRx {
-            packet: serde_json::to_value(packet).unwrap()
+            packet: serde_json::to_value(&packet).unwrap()
         });
+        println!("{}", serde_json::to_value(packet).unwrap());
+        println!("Marker one");
+        
     }
     let _ = on_lora_conn_msg.send(LoraConnMsg::SocketClosed);
     println!("Message sent over websocket!");
@@ -266,6 +273,7 @@ async fn check_usb() -> bool {
         .unwrap_or(false)
 }
 
+/*
 #[tauri::command]
 async fn run_lora_demod() {
     let exe_path = std::env::current_exe().expect("Failed to get executable path");
@@ -292,13 +300,13 @@ async fn run_lora_demod() {
         .current_dir(script_dir)
         .spawn()
         .ok();
-}
+}*/
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
-            run_lora_demod,
+            /*run_lora_demod,*/
             listen_to_lora,
             listen_to_usb,
             stop_usb,

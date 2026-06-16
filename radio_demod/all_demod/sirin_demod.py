@@ -20,10 +20,10 @@ class sdrplay_lora_rx(gr.top_block):
         self,
         use_zmq=False,
         zmq_in_addr="tcp://127.0.0.1:5555",
-        center_freq=434.5e6,
+        center_freq=429.86e6,
         samp_rate=2_000_000,
         bw=125_000,
-        gain=20,
+        gain=30,
         sf=7,
         pay_len=256,
         sync_word=0x12,
@@ -46,6 +46,7 @@ class sdrplay_lora_rx(gr.top_block):
                 gr.sizeof_gr_complex, 1, zmq_in_addr, 100, False, -1
             )
         else:
+            # agc_setpoint=-30
             self.source = soapy.source(
                 "driver=sdrplay", "fc32", 1, "", "", [""], [""]
             )
@@ -53,6 +54,7 @@ class sdrplay_lora_rx(gr.top_block):
             self.source.set_sample_rate(0, samp_rate)
             self.source.set_frequency(0, center_freq)
             self.source.set_bandwidth(0, bw)
+            self.source.set_gain_mode(0, False)  # disable AGC before setting gain
             self.source.set_gain(0, gain)
             self.source.set_min_output_buffer(
                 int(np.ceil(samp_rate / bw * (2 ** sf + 2)))
@@ -136,7 +138,6 @@ def run(config):
 
     threading.Thread(target=lambda: asyncio.run(start_ws()), daemon=True).start()
 
-    # FIX 1: was incorrectly named lora_rx_with_split
     tb = sdrplay_lora_rx(
         use_zmq=config["zmq"],
         zmq_in_addr=config["zmq_in_addr"],
@@ -176,13 +177,13 @@ def run(config):
         sys.exit(0)
 
 
-# FIX 2: main block was missing entirely — script had no entry point
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="SDRplay LoRa RX -> WebSocket")
 
     parser.add_argument("--zmq", action="store_true", help="Use ZMQ input instead of SDRplay")
     parser.add_argument("--zmq-in-addr", default="tcp://127.0.0.1:5555")
-    parser.add_argument("--center-freq", type=float, default=434.5e6)
+    parser.add_argument("--center-freq", type=float, default=429.86e6)
+    # FIX: updated defaults to values supported by RSP1a
     parser.add_argument("--sample-rate", type=float, default=2_000_000)
     parser.add_argument("--bandwidth", type=float, default=125_000)
     parser.add_argument("--gain", type=float, default=20)

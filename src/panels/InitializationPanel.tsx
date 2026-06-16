@@ -1,5 +1,5 @@
 type Props = {
-  switchScreen: (panel: "init" | "telemetry" | "usb") => void;
+  switchScreen: (panel: "init" | "telemetry" | "usb" | "rawData") => void;
 };
 
 export default function InitializationPanel({ switchScreen }: Props) {
@@ -35,6 +35,20 @@ export default function InitializationPanel({ switchScreen }: Props) {
           <button
             onClick={() => switchScreen("usb")}
             className="px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600"
+          >
+            Open
+          </button>
+        </div>
+
+        {/* Bare Bones */}
+        <div className="bg-white shadow rounded-lg p-4 flex items-center justify-between">
+          <span className="text-lg font-semibold">
+            Raw Data
+          </span>
+
+          <button
+            onClick={() => switchScreen("rawData")}
+            className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
           >
             Open
           </button>
