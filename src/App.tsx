@@ -29,8 +29,8 @@ export default function App() {
   );
 
   return (
-    <div className="min-h-screen bg-[radial-gradient(circle_at_top,_rgba(57,132,255,0.24),_transparent_32%),linear-gradient(180deg,_#050814_0%,_#09101b_48%,_#05070e_100%)] text-slate-100">
-      <div className="mx-auto flex min-h-screen max-w-[1600px] flex-col px-4 py-4 sm:px-6 lg:px-8">
+    <div className="h-screen bg-[radial-gradient(circle_at_top,rgba(57,132,255,0.24),transparent_32%),linear-gradient(180deg,#050814_0%,#09101b_48%,#05070e_100%)] text-slate-100 overflow-hidden">
+      <div className="flex h-screen flex-col px-1 py-1">
         <InitializationPanel
           activePage={activePage}
           activePageDescription={activePageMeta.description}
@@ -40,7 +40,7 @@ export default function App() {
           onSourceChange={setSelectedSource}
         />
 
-        <div className="mt-4 flex-1">
+        <div className="mt-1 flex-1 overflow-hidden">
           {activePage === "overview" && <TelemetryPanel selectedSource={selectedSource} />}
           {activePage === "raw" && <RawDataPanel selectedSource={selectedSource} />}
           {activePage === "timeline" && <TimelinePanel selectedSource={selectedSource} />}

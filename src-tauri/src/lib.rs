@@ -1019,10 +1019,11 @@ async fn handle_packet(app: &AppHandle, state: &TelemetryState, packet: SirinPac
 
 async fn update_timeline(app: &AppHandle, state: &TelemetryState, packet: &SirinPacket) {
     let mut timeline = state.timeline.write().await;
-    let next = next_timeline_stage(&timeline, packet);
+    let next = next_timeline_stage(&timeline, packet).clone();
     if next != timeline.current_stage {
         if !timeline.completed_stages.contains(&timeline.current_stage) {
-            timeline.completed_stages.push(timeline.current_stage);
+            let stage = timeline.current_stage.clone();
+            timeline.completed_stages.push(stage);
         }
         timeline.current_stage = next;
         timeline.stage_started_at_ms = packet.received_at_ms;

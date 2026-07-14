@@ -11,7 +11,7 @@ type Props = {
 
 export default function TelemetryStatus({ source, status, packet, expectedPacketsPerSecond, staleTimeoutMs }: Props) {
   return (
-    <div className="space-y-4">
+    <div className="space-y-1">
       <PacketHealth
         source={source}
         status={status}
@@ -20,32 +20,32 @@ export default function TelemetryStatus({ source, status, packet, expectedPacket
         staleTimeoutMs={staleTimeoutMs}
       />
 
-      <aside className="rounded-[28px] border border-white/10 bg-slate-950/55 p-4 backdrop-blur">
-        <p className="font-mono text-[11px] uppercase tracking-[0.35em] text-cyan-200/75">{source.toUpperCase()} Link Detail</p>
-        <div className="mt-4 space-y-4">
+      <aside className="rounded-[20px] border border-white/10 bg-slate-950/55 p-2 backdrop-blur">
+        <p className="font-mono text-[10px] uppercase tracking-[0.35em] text-cyan-200/75">{source.toUpperCase()} Detail</p>
+        <div className="mt-1 space-y-1">
           <StatusPill label={status?.state ?? "disconnected"} tone={statusTone(status?.state ?? "disconnected")} />
-          <div className="rounded-2xl border border-white/8 bg-black/20 p-4 text-sm text-slate-300">
-            <p className="font-mono text-[11px] uppercase tracking-[0.25em] text-slate-400">Latest Message</p>
-            <p className="mt-2 text-sm text-slate-200">{status?.message ?? "Waiting for listener update."}</p>
+          <div className="rounded-lg border border-white/8 bg-black/20 p-2 text-xs text-slate-300">
+            <p className="font-mono text-[9px] uppercase tracking-[0.25em] text-slate-400">Message</p>
+            <p className="mt-1 text-[10px] text-slate-200 line-clamp-2">{status?.message ?? "Waiting..."}</p>
           </div>
-          <div className="rounded-2xl border border-white/8 bg-black/20 p-4">
-            <p className="font-mono text-[11px] uppercase tracking-[0.25em] text-slate-400">Packet Snapshot</p>
-            <dl className="mt-3 grid grid-cols-2 gap-3 text-sm text-slate-200">
+          <div className="rounded-lg border border-white/8 bg-black/20 p-2">
+            <p className="font-mono text-[9px] uppercase tracking-[0.25em] text-slate-400">Snapshot</p>
+            <dl className="mt-1 grid grid-cols-2 gap-1 text-[9px] text-slate-200">
               <div>
-                <dt className="text-slate-400">Callsign</dt>
-                <dd>{packet?.callsign ?? "--"}</dd>
+                <dt className="text-slate-400 text-[8px]">Callsign</dt>
+                <dd className="text-[9px]">{packet?.callsign ?? "--"}</dd>
               </div>
               <div>
-                <dt className="text-slate-400">Mode</dt>
-                <dd>{packet?.fields.flightMode ?? "--"}</dd>
+                <dt className="text-slate-400 text-[8px]">Mode</dt>
+                <dd className="text-[9px]">{packet?.fields.flightMode ?? "--"}</dd>
               </div>
               <div>
-                <dt className="text-slate-400">Lat</dt>
-                <dd>{displayMaybeFloat(packet?.fields.latitudeDeg, 5)}</dd>
+                <dt className="text-slate-400 text-[8px]">Lat</dt>
+                <dd className="text-[8px]">{displayMaybeFloat(packet?.fields.latitudeDeg, 3)}</dd>
               </div>
               <div>
-                <dt className="text-slate-400">Lon</dt>
-                <dd>{displayMaybeFloat(packet?.fields.longitudeDeg, 5)}</dd>
+                <dt className="text-slate-400 text-[8px]">Lon</dt>
+                <dd className="text-[8px]">{displayMaybeFloat(packet?.fields.longitudeDeg, 3)}</dd>
               </div>
             </dl>
           </div>
@@ -75,7 +75,7 @@ function StatusPill({ label, tone }: { label: string; tone: "emerald" | "amber" 
     rose: "border-rose-400/40 bg-rose-400/15 text-rose-100",
     slate: "border-slate-400/20 bg-slate-400/10 text-slate-200",
   };
-  return <div className={`inline-flex rounded-full border px-4 py-2 font-mono text-xs uppercase tracking-[0.3em] ${styles[tone]}`}>{label}</div>;
+  return <div className={`inline-flex rounded-full border px-2 py-1 font-mono text-[9px] uppercase tracking-[0.3em] ${styles[tone]}`}>{label}</div>;
 }
 
 function displayMaybeFloat(value: number | null | undefined, digits: number) {

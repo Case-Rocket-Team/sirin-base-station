@@ -66,17 +66,17 @@ export default function SettingsPanel({ selectedSource }: Props) {
   }
 
   return (
-    <section className="rounded-[28px] border border-white/10 bg-slate-950/55 p-4 backdrop-blur">
-      <div className="grid gap-4 lg:grid-cols-2">
+    <section className="rounded-[20px] border border-white/10 bg-slate-950/55 p-2 backdrop-blur">
+      <div className="grid gap-1 grid-cols-5">
         <SettingField label="LoRa WebSocket URL">
           <input
             value={draft.loraWebsocketUrl}
             onChange={(event) => setDraft({ ...draft, loraWebsocketUrl: event.target.value })}
-            className="w-full rounded-xl border border-white/10 bg-slate-900/80 px-3 py-3 text-slate-100 outline-none focus:border-cyan-300/40"
+            className="w-full rounded-lg border border-white/10 bg-slate-900/80 px-1.5 py-1 text-slate-100 outline-none focus:border-cyan-300/40 text-[10px]"
           />
         </SettingField>
 
-        <SettingField label="Expected Packets Per Second">
+        <SettingField label="Expected Packets Per Sec">
           <input
             type="number"
             min="0.1"
@@ -85,7 +85,7 @@ export default function SettingsPanel({ selectedSource }: Props) {
             onChange={(event) =>
               setDraft({ ...draft, expectedPacketsPerSecond: Number(event.target.value) })
             }
-            className="w-full rounded-xl border border-white/10 bg-slate-900/80 px-3 py-3 text-slate-100 outline-none focus:border-cyan-300/40"
+            className="w-full rounded-lg border border-white/10 bg-slate-900/80 px-1.5 py-1 text-slate-100 outline-none focus:border-cyan-300/40 text-[10px]"
           />
         </SettingField>
 
@@ -96,7 +96,7 @@ export default function SettingsPanel({ selectedSource }: Props) {
             step="100"
             value={draft.staleTimeoutMs}
             onChange={(event) => setDraft({ ...draft, staleTimeoutMs: Number(event.target.value) })}
-            className="w-full rounded-xl border border-white/10 bg-slate-900/80 px-3 py-3 text-slate-100 outline-none focus:border-cyan-300/40"
+            className="w-full rounded-lg border border-white/10 bg-slate-900/80 px-1.5 py-1 text-slate-100 outline-none focus:border-cyan-300/40 text-[10px]"
           />
         </SettingField>
 
@@ -104,38 +104,38 @@ export default function SettingsPanel({ selectedSource }: Props) {
           <input
             value={draft.recordingDirectory}
             onChange={(event) => setDraft({ ...draft, recordingDirectory: event.target.value })}
-            className="w-full rounded-xl border border-white/10 bg-slate-900/80 px-3 py-3 text-slate-100 outline-none focus:border-cyan-300/40"
+            className="w-full rounded-lg border border-white/10 bg-slate-900/80 px-1.5 py-1 text-slate-100 outline-none focus:border-cyan-300/40 text-[10px]"
           />
         </SettingField>
 
-        <SettingField label="Altitude Minimum (ft)">
+        <SettingField label="Alt Min (ft)">
           <input
             type="number"
             value={draft.altitudeMinFt}
             onChange={(event) => setDraft({ ...draft, altitudeMinFt: Number(event.target.value) })}
-            className="w-full rounded-xl border border-white/10 bg-slate-900/80 px-3 py-3 text-slate-100 outline-none focus:border-cyan-300/40"
+            className="w-full rounded-lg border border-white/10 bg-slate-900/80 px-1.5 py-1 text-slate-100 outline-none focus:border-cyan-300/40 text-[10px]"
           />
         </SettingField>
 
-        <SettingField label="Altitude Maximum (ft)">
+        <SettingField label="Alt Max (ft)">
           <input
             type="number"
             value={draft.altitudeMaxFt}
             onChange={(event) => setDraft({ ...draft, altitudeMaxFt: Number(event.target.value) })}
-            className="w-full rounded-xl border border-white/10 bg-slate-900/80 px-3 py-3 text-slate-100 outline-none focus:border-cyan-300/40"
+            className="w-full rounded-lg border border-white/10 bg-slate-900/80 px-1.5 py-1 text-slate-100 outline-none focus:border-cyan-300/40 text-[10px]"
           />
         </SettingField>
 
-        <SettingField label="Target Altitude (ft)">
+        <SettingField label="Target Alt (ft)">
           <input
             type="number"
             value={draft.targetAltitudeFt}
             onChange={(event) => setDraft({ ...draft, targetAltitudeFt: Number(event.target.value) })}
-            className="w-full rounded-xl border border-white/10 bg-slate-900/80 px-3 py-3 text-slate-100 outline-none focus:border-cyan-300/40"
+            className="w-full rounded-lg border border-white/10 bg-slate-900/80 px-1.5 py-1 text-slate-100 outline-none focus:border-cyan-300/40 text-[10px]"
           />
         </SettingField>
 
-        <SettingField label="Default Recording Format">
+        <SettingField label="Recording Format">
           <select
             value={draft.defaultRecordingFormat}
             onChange={(event) =>
@@ -144,71 +144,85 @@ export default function SettingsPanel({ selectedSource }: Props) {
                 defaultRecordingFormat: event.target.value as RecordingFormat,
               })
             }
-            className="w-full rounded-xl border border-white/10 bg-slate-900/80 px-3 py-3 text-slate-100 outline-none focus:border-cyan-300/40"
+            className="w-full rounded-lg border border-white/10 bg-slate-900/80 px-1.5 py-1 text-slate-100 outline-none focus:border-cyan-300/40 text-[10px]"
           >
             <option value="jsonl">JSONL</option>
             <option value="csv">CSV</option>
           </select>
         </SettingField>
 
-        <SettingField label="LoRa Demod Script Path">
+        <SettingField label="Demod Script Path">
           <input
             value={draft.loraDemodPath}
             onChange={(event) => setDraft({ ...draft, loraDemodPath: event.target.value })}
-            className="w-full rounded-xl border border-white/10 bg-slate-900/80 px-3 py-3 text-slate-100 outline-none focus:border-cyan-300/40"
+            className="w-full rounded-lg border border-white/10 bg-slate-900/80 px-1.5 py-1 text-slate-100 outline-none focus:border-cyan-300/40 text-[10px]"
           />
         </SettingField>
 
-        <SettingField label="LoRa Demod Host">
+        <SettingField label="Demod Host">
           <input
             value={draft.loraDemodHost}
             onChange={(event) => setDraft({ ...draft, loraDemodHost: event.target.value })}
-            className="w-full rounded-xl border border-white/10 bg-slate-900/80 px-3 py-3 text-slate-100 outline-none focus:border-cyan-300/40"
+            className="w-full rounded-lg border border-white/10 bg-slate-900/80 px-1.5 py-1 text-slate-100 outline-none focus:border-cyan-300/40 text-[10px]"
           />
         </SettingField>
 
-        <SettingField label="LoRa Demod Port">
+        <SettingField label="Demod Port">
           <input
             type="number"
             min="1"
             max="65535"
             value={draft.loraDemodPort}
             onChange={(event) => setDraft({ ...draft, loraDemodPort: Number(event.target.value) })}
-            className="w-full rounded-xl border border-white/10 bg-slate-900/80 px-3 py-3 text-slate-100 outline-none focus:border-cyan-300/40"
+            className="w-full rounded-lg border border-white/10 bg-slate-900/80 px-1.5 py-1 text-slate-100 outline-none focus:border-cyan-300/40 text-[10px]"
           />
         </SettingField>
       </div>
 
-      <div className="mt-6 flex items-center gap-4">
+      <div className="mt-2 flex items-center gap-1">
         <button
           onClick={() => void handleSave()}
-          className="rounded-xl bg-cyan-300 px-5 py-3 font-mono text-xs uppercase tracking-[0.25em] text-slate-950 hover:bg-cyan-200"
+          className="rounded-lg bg-cyan-300 px-2 py-1 font-mono text-[9px] uppercase tracking-[0.25em] text-slate-950 hover:bg-cyan-200"
         >
-          Save Settings
+          Save
         </button>
         <button
           onClick={() => void handleStartDemod()}
-          className="rounded-xl bg-emerald-400/90 px-5 py-3 font-mono text-xs uppercase tracking-[0.25em] text-slate-950"
+          className="rounded-lg bg-emerald-400/90 px-2 py-1 font-mono text-[9px] uppercase tracking-[0.25em] text-slate-950"
         >
-          Start Demod
+          Start
         </button>
         <button
           onClick={() => void handleStopDemod()}
-          className="rounded-xl bg-rose-500/80 px-5 py-3 font-mono text-xs uppercase tracking-[0.25em] text-white"
+          className="rounded-lg bg-rose-500/80 px-2 py-1 font-mono text-[9px] uppercase tracking-[0.25em] text-white"
         >
-          Stop Demod
+          Stop
         </button>
-        {message && <p className="text-sm text-emerald-300">{message}</p>}
-        {error && <p className="text-sm text-rose-300">{error}</p>}
+        {message && <p className="text-[9px] text-emerald-300">{message}</p>}
+        {error && <p className="text-[9px] text-rose-300">{error}</p>}
       </div>
 
-      <div className="mt-4 rounded-2xl border border-white/8 bg-black/25 p-4 text-sm text-slate-200">
-        <p className="font-mono text-[11px] uppercase tracking-[0.2em] text-slate-400">Demod Status</p>
-        <p className="mt-2">Running: {telemetry.demodStatus?.running ? "Yes" : "No"}</p>
-        <p>Path: {telemetry.demodStatus?.path ?? "--"}</p>
-        <p>Host: {telemetry.demodStatus?.host ?? "--"}</p>
-        <p>Port: {telemetry.demodStatus?.port ?? "--"}</p>
-        {telemetry.demodStatus?.lastError && <p className="mt-2 text-rose-300">{telemetry.demodStatus.lastError}</p>}
+      <div className="mt-2 rounded-lg border border-white/8 bg-black/25 p-1.5 text-[9px] text-slate-200">
+        <p className="font-mono text-[9px] uppercase tracking-[0.2em] text-slate-400">Demod Status</p>
+        <div className="mt-1 grid grid-cols-4 gap-1 text-[9px]">
+          <div>
+            <p className="text-slate-400 text-[8px]">Running</p>
+            <p className="text-[9px]">{telemetry.demodStatus?.running ? "Y" : "N"}</p>
+          </div>
+          <div>
+            <p className="text-slate-400 text-[8px]">Path</p>
+            <p className="truncate text-[9px]">{telemetry.demodStatus?.path?.split('/').pop() ?? "--"}</p>
+          </div>
+          <div>
+            <p className="text-slate-400 text-[8px]">Host</p>
+            <p className="text-[9px]">{telemetry.demodStatus?.host ?? "--"}</p>
+          </div>
+          <div>
+            <p className="text-slate-400 text-[8px]">Port</p>
+            <p className="text-[9px]">{telemetry.demodStatus?.port ?? "--"}</p>
+          </div>
+        </div>
+        {telemetry.demodStatus?.lastError && <p className="mt-1 text-[8px] text-rose-300 line-clamp-1">{telemetry.demodStatus.lastError}</p>}
       </div>
     </section>
   );
@@ -216,8 +230,8 @@ export default function SettingsPanel({ selectedSource }: Props) {
 
 function SettingField({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <label className="rounded-2xl border border-white/8 bg-black/25 p-4 text-sm text-slate-300">
-      <span className="mb-3 block font-mono text-[11px] uppercase tracking-[0.2em] text-slate-400">
+    <label className="rounded-lg border border-white/8 bg-black/25 p-1.5 text-[9px] text-slate-300">
+      <span className="mb-0.5 block font-mono text-[9px] uppercase tracking-[0.2em] text-slate-400">
         {label}
       </span>
       {children}

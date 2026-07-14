@@ -22,7 +22,7 @@ export default function RecoveryPanel() {
   const bearing = useMemo(() => calculateBearing(leftResolved.lat, leftResolved.lon, rightResolved.lat, rightResolved.lon), [leftResolved, rightResolved]);
 
   return (
-    <div className="grid gap-4 xl:grid-cols-[340px_minmax(0,1fr)]">
+    <div className="grid gap-1 grid-cols-[280px_minmax(0,1fr)_minmax(0,1fr)_180px]">
       <TelemetryStatus
         source="lora"
         status={telemetry.status}
@@ -30,21 +30,17 @@ export default function RecoveryPanel() {
         expectedPacketsPerSecond={telemetry.snapshot?.config.expectedPacketsPerSecond ?? 10}
         staleTimeoutMs={telemetry.snapshot?.config.staleTimeoutMs ?? 3000}
       />
-      <section className="rounded-[28px] border border-white/10 bg-slate-950/55 p-4 backdrop-blur">
-        <div className="grid gap-4 lg:grid-cols-2">
-          <RecoveryCard title="Left Callsign" state={left} onChange={setLeft} resolved={leftResolved} />
-          <RecoveryCard title="Right Callsign" state={right} onChange={setRight} resolved={rightResolved} />
-        </div>
-        <div className="mt-4 rounded-[28px] border border-white/10 bg-black/20 p-6 text-center">
-          <p className="font-mono text-[11px] uppercase tracking-[0.35em] text-cyan-200/75">Bearing Display</p>
-          <div className="mx-auto mt-5 flex h-56 w-56 items-center justify-center rounded-full border border-cyan-300/35 bg-[radial-gradient(circle,_rgba(56,189,248,0.12),_rgba(2,6,23,0.95))]">
-            <div className="text-center">
-              <p className="font-mono text-5xl font-semibold text-white">{bearing === null ? "--" : `${bearing.toFixed(0)}°`}</p>
-              <p className="mt-3 text-sm text-slate-300">True bearing from left to right</p>
-            </div>
+      <RecoveryCard title="Left Callsign" state={left} onChange={setLeft} resolved={leftResolved} />
+      <RecoveryCard title="Right Callsign" state={right} onChange={setRight} resolved={rightResolved} />
+      <div className="rounded-[20px] border border-white/10 bg-black/20 p-2 flex flex-col items-center justify-center">
+        <p className="font-mono text-[10px] uppercase tracking-[0.35em] text-cyan-200/75">Bearing</p>
+        <div className="mx-auto mt-1 flex h-32 w-32 items-center justify-center rounded-full border border-cyan-300/35 bg-[radial-gradient(circle,rgba(56,189,248,0.12),rgba(2,6,23,0.95))]">
+          <div className="text-center">
+            <p className="font-mono text-2xl font-semibold text-white">{bearing === null ? "--" : `${bearing.toFixed(0)}°`}</p>
+            <p className="mt-0.5 text-[8px] text-slate-300">bearing</p>
           </div>
         </div>
-      </section>
+      </div>
     </div>
   );
 }
@@ -61,39 +57,39 @@ function RecoveryCard({
   resolved: { lat: number | null; lon: number | null; source: string };
 }) {
   return (
-    <div className="rounded-[28px] border border-white/10 bg-black/20 p-4">
-      <p className="font-mono text-[11px] uppercase tracking-[0.35em] text-cyan-200/75">{title}</p>
-      <div className="mt-4 grid gap-3">
+    <div className="rounded-[20px] border border-white/10 bg-black/20 p-2">
+      <p className="font-mono text-[10px] uppercase tracking-[0.35em] text-cyan-200/75">{title}</p>
+      <div className="mt-1 space-y-1">
         <input
           value={state.callsign}
           onChange={(event) => onChange({ ...state, callsign: event.target.value })}
           placeholder="Callsign"
-          className="rounded-xl border border-white/10 bg-slate-900/80 px-3 py-3 text-slate-100 outline-none focus:border-cyan-300/40"
+          className="w-full rounded-lg border border-white/10 bg-slate-900/80 px-1.5 py-1 text-slate-100 outline-none focus:border-cyan-300/40 text-[10px]"
         />
         <input
           value={state.manualLat}
           onChange={(event) => onChange({ ...state, manualLat: event.target.value })}
-          placeholder="Manual latitude"
-          className="rounded-xl border border-white/10 bg-slate-900/80 px-3 py-3 text-slate-100 outline-none focus:border-cyan-300/40"
+          placeholder="Lat"
+          className="w-full rounded-lg border border-white/10 bg-slate-900/80 px-1.5 py-1 text-slate-100 outline-none focus:border-cyan-300/40 text-[10px]"
         />
         <input
           value={state.manualLon}
           onChange={(event) => onChange({ ...state, manualLon: event.target.value })}
-          placeholder="Manual longitude"
-          className="rounded-xl border border-white/10 bg-slate-900/80 px-3 py-3 text-slate-100 outline-none focus:border-cyan-300/40"
+          placeholder="Lon"
+          className="w-full rounded-lg border border-white/10 bg-slate-900/80 px-1.5 py-1 text-slate-100 outline-none focus:border-cyan-300/40 text-[10px]"
         />
       </div>
-      <dl className="mt-4 grid grid-cols-2 gap-3 text-sm text-slate-200">
+      <dl className="mt-1 text-[9px] text-slate-200 space-y-0.5">
         <div>
-          <dt className="text-slate-400">Latitude</dt>
-          <dd>{resolved.lat === null ? "--" : resolved.lat.toFixed(5)}</dd>
+          <dt className="text-slate-400">Lat</dt>
+          <dd className="text-[8px]">{resolved.lat === null ? "--" : resolved.lat.toFixed(4)}</dd>
         </div>
         <div>
-          <dt className="text-slate-400">Longitude</dt>
-          <dd>{resolved.lon === null ? "--" : resolved.lon.toFixed(5)}</dd>
+          <dt className="text-slate-400">Lon</dt>
+          <dd className="text-[8px]">{resolved.lon === null ? "--" : resolved.lon.toFixed(4)}</dd>
         </div>
       </dl>
-      <p className="mt-3 text-xs text-slate-400">Source: {resolved.source}</p>
+      <p className="mt-0.5 text-[8px] text-slate-400">{resolved.source}</p>
     </div>
   );
 }

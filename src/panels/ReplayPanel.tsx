@@ -60,59 +60,59 @@ export default function ReplayPanel() {
   };
 
   return (
-    <div className="flex flex-col gap-4">
-      <section className="rounded-[28px] border border-white/10 bg-slate-950/55 p-4 backdrop-blur">
-        <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_120px_120px_120px_120px_120px_120px]">
+    <div className="flex flex-col gap-1">
+      <section className="rounded-[20px] border border-white/10 bg-slate-950/55 p-2 backdrop-blur">
+        <div className="grid gap-1 grid-cols-[minmax(0,1fr)_70px_70px_70px_70px_70px_70px]">
           <input
             value={path}
             onChange={(event) => setPath(event.target.value)}
-            placeholder="C:\\path\\to\\recording.jsonl"
-            className="rounded-xl border border-white/10 bg-slate-900/80 px-3 py-3 text-slate-100 outline-none focus:border-cyan-300/40"
+            placeholder="Path to recording.jsonl"
+            className="rounded-lg border border-white/10 bg-slate-900/80 px-1.5 py-1 text-slate-100 outline-none focus:border-cyan-300/40 text-[10px]"
           />
           <input
             value={speed}
             onChange={(event) => setSpeed(event.target.value)}
-            className="rounded-xl border border-white/10 bg-slate-900/80 px-3 py-3 text-slate-100 outline-none focus:border-cyan-300/40"
+            className="rounded-lg border border-white/10 bg-slate-900/80 px-1.5 py-1 text-slate-100 outline-none focus:border-cyan-300/40 text-[10px]"
           />
-          <button onClick={() => void handleLoad()} className="rounded-xl bg-cyan-300 px-4 py-3 font-mono text-xs uppercase tracking-[0.25em] text-slate-950">
+          <button onClick={() => void handleLoad()} className="rounded-lg bg-cyan-300 px-1.5 py-1 font-mono text-[9px] uppercase tracking-[0.25em] text-slate-950">
             Load
           </button>
-          <button onClick={() => void handlePlay()} className="rounded-xl bg-emerald-400/90 px-4 py-3 font-mono text-xs uppercase tracking-[0.25em] text-slate-950">
+          <button onClick={() => void handlePlay()} className="rounded-lg bg-emerald-400/90 px-1.5 py-1 font-mono text-[9px] uppercase tracking-[0.25em] text-slate-950">
             Play
           </button>
-          <button onClick={() => void handlePause()} className="rounded-xl bg-amber-300/90 px-4 py-3 font-mono text-xs uppercase tracking-[0.25em] text-slate-950">
+          <button onClick={() => void handlePause()} className="rounded-lg bg-amber-300/90 px-1.5 py-1 font-mono text-[9px] uppercase tracking-[0.25em] text-slate-950">
             Pause
           </button>
-          <button onClick={() => void handleStep()} className="rounded-xl bg-white/10 px-4 py-3 font-mono text-xs uppercase tracking-[0.25em] text-white">
+          <button onClick={() => void handleStep()} className="rounded-lg bg-white/10 px-1.5 py-1 font-mono text-[9px] uppercase tracking-[0.25em] text-white">
             Step
           </button>
-          <button onClick={() => void handleRestart()} className="rounded-xl bg-rose-500/80 px-4 py-3 font-mono text-xs uppercase tracking-[0.25em] text-white">
+          <button onClick={() => void handleRestart()} className="rounded-lg bg-rose-500/80 px-1.5 py-1 font-mono text-[9px] uppercase tracking-[0.25em] text-white">
             Restart
           </button>
         </div>
-        <div className="mt-4 flex flex-wrap gap-4 text-sm text-slate-300">
-          <span>Loaded: {telemetry.replayStatus?.loaded ? "Yes" : "No"}</span>
-          <span>Packets: {telemetry.replayStatus?.packetCount ?? 0}</span>
-          <span>Index: {telemetry.replayStatus?.currentIndex ?? 0}</span>
-          <span>Speed: {telemetry.replayStatus?.speed ?? 1}x</span>
+        <div className="mt-1 flex flex-wrap gap-2 text-[9px] text-slate-300">
+          <span>L: {telemetry.replayStatus?.loaded ? "Y" : "N"}</span>
+          <span>P: {telemetry.replayStatus?.packetCount ?? 0}</span>
+          <span>I: {telemetry.replayStatus?.currentIndex ?? 0}</span>
+          <span>S: {telemetry.replayStatus?.speed ?? 1}x</span>
         </div>
-        {(error || telemetry.replayStatus?.lastError) && <p className="mt-3 text-sm text-rose-300">{error ?? telemetry.replayStatus?.lastError}</p>}
+        {(error || telemetry.replayStatus?.lastError) && <p className="mt-0.5 text-[9px] text-rose-300 line-clamp-1">{error ?? telemetry.replayStatus?.lastError}</p>}
       </section>
 
-      <section className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
-        <div className="rounded-[28px] border border-white/10 bg-slate-950/55 p-4 backdrop-blur">
-          <p className="font-mono text-[11px] uppercase tracking-[0.35em] text-cyan-200/75">Replay Packet</p>
-          <pre className="mt-4 max-h-[520px] overflow-auto rounded-2xl border border-white/8 bg-black/35 p-4 text-xs text-slate-200">
-            {packet ? JSON.stringify(packet, null, 2) : "No replay packet emitted yet."}
+      <section className="grid gap-1 grid-cols-[minmax(0,1fr)_200px]">
+        <div className="rounded-[20px] border border-white/10 bg-slate-950/55 p-2 backdrop-blur">
+          <p className="font-mono text-[10px] uppercase tracking-[0.35em] text-cyan-200/75">Replay Packet</p>
+          <pre className="mt-1 h-[130px] overflow-auto rounded-lg border border-white/8 bg-black/35 p-1.5 text-[9px] text-slate-200">
+            {packet ? JSON.stringify(packet, null, 2) : "No packet."}
           </pre>
         </div>
-        <div className="rounded-[28px] border border-white/10 bg-slate-950/55 p-4 backdrop-blur">
-          <p className="font-mono text-[11px] uppercase tracking-[0.35em] text-cyan-200/75">Replay Status</p>
-          <dl className="mt-4 grid grid-cols-2 gap-3 text-sm text-slate-200">
-            <Metric label="File" value={telemetry.replayStatus?.sourcePath ?? "--"} />
-            <Metric label="Timestamp" value={telemetry.replayStatus?.currentTimestampMs ? String(telemetry.replayStatus.currentTimestampMs) : "--"} />
+        <div className="rounded-[20px] border border-white/10 bg-slate-950/55 p-2 backdrop-blur">
+          <p className="font-mono text-[10px] uppercase tracking-[0.35em] text-cyan-200/75">Status</p>
+          <dl className="mt-1 text-[9px] text-slate-200 space-y-0.5">
+            <Metric label="File" value={(telemetry.replayStatus?.sourcePath ?? "--").split(/[/\\]/).pop() ?? "--"} />
+            <Metric label="Ts" value={telemetry.replayStatus?.currentTimestampMs ? String(telemetry.replayStatus.currentTimestampMs).slice(0, 8) : "--"} />
             <Metric label="Mode" value={packet?.fields.flightMode ?? "--"} />
-            <Metric label="Altitude" value={packet?.fields.altitudeAglFt !== null && packet?.fields.altitudeAglFt !== undefined ? `${Math.round(packet.fields.altitudeAglFt)} ft` : "--"} />
+            <Metric label="Alt" value={packet?.fields.altitudeAglFt !== null && packet?.fields.altitudeAglFt !== undefined ? `${Math.round(packet.fields.altitudeAglFt)}` : "--"} />
           </dl>
         </div>
       </section>
