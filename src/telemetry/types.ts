@@ -1,5 +1,5 @@
 export type TelemetrySource = "lora" | "usb";
-export type AppPage = "overview" | "raw" | "timeline" | "replay" | "recovery" | "usb" | "settings";
+export type AppPage = "home" | "overview" | "raw" | "timeline" | "replay" | "recovery" | "usb" | "settings";
 export type LinkState = "disconnected" | "connecting" | "connected" | "error";
 export type RecordingFormat = "csv" | "jsonl";
 export type TimelineStage = "standby" | "launch" | "burnout" | "apogee" | "drogue" | "main" | "landed";

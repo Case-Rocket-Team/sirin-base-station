@@ -42,7 +42,7 @@ export default function RawDataPanel({ selectedSource }: Props) {
   };
 
   return (
-    <div className="grid gap-1 grid-cols-[280px_minmax(0,1fr)_220px_220px]">
+    <div className="responsive-panel-grid responsive-panel-grid-raw">
       <TelemetryStatus
         source={selectedSource}
         status={telemetry.status}

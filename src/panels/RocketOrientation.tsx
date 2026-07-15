@@ -18,17 +18,20 @@ export default function RocketOrientation({ quatW, quatX, quatY, quatZ }: Props)
   }
 
   return (
-    <Canvas camera={{ position: [6, 6, 8], fov: 40 }}>
-      <color attach="background" args={["#05070e"]} />
-      <ambientLight intensity={0.8} />
-      <directionalLight position={[6, 8, 8]} intensity={1.6} />
+    <Canvas camera={{ position: [1.5, 1.2, 1.7], fov: 42, near: 0.01, far: 100 }} dpr={[1, 2]}>
+      <color attach="background" args={["#1a1a2e"]} />
+      <ambientLight intensity={0.65} />
+      <directionalLight position={[3, 5, 4]} intensity={0.9} castShadow />
+      <directionalLight position={[-2, 1, -2]} color="#aaccff" intensity={0.3} />
       <Suspense fallback={null}>
         <Environment preset="city" />
         <RocketModel quaternion={quaternion} />
       </Suspense>
-      <Grid args={[20, 20]} sectionColor="#2f78c7" cellColor="#17304c" fadeDistance={28} fadeStrength={1} />
-      <axesHelper args={[4]} />
-      <OrbitControls enablePan={false} />
+      <Grid args={[1, 1]} cellSize={0.2} sectionSize={0.2} sectionColor="#00e5ff" cellColor="#00e5ff" fadeDistance={3} fadeStrength={1} />
+      <Grid args={[1, 1]} cellSize={0.2} sectionSize={0.2} sectionColor="#00e5ff" cellColor="#00e5ff" fadeDistance={3} fadeStrength={1} rotation={[Math.PI / 2, 0, 0]} />
+      <Grid args={[1, 1]} cellSize={0.2} sectionSize={0.2} sectionColor="#00e5ff" cellColor="#00e5ff" fadeDistance={3} fadeStrength={1} rotation={[0, 0, Math.PI / 2]} />
+      <axesHelper args={[1.15]} />
+      <OrbitControls enablePan={false} enableZoom={false} />
     </Canvas>
   );
 }
@@ -43,7 +46,7 @@ function RocketModel({ quaternion }: { quaternion: THREE.Quaternion }) {
     }
   });
 
-  return <primitive ref={ref} object={scene.clone()} scale={1.4} />;
+  return <primitive ref={ref} object={scene.clone()} scale={1.2} position={[0.5, 0.3, 0.5]} />;
 }
 
 function normalizeQuaternion(

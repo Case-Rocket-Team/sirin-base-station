@@ -32,7 +32,6 @@ export default function ThreeDPosition({ x, y, z }: Props) {
   }
 
   const start = history[0];
-  const current = history[history.length - 1];
   const points = history.map((point) => new THREE.Vector3(point[0] - start[0], point[1] - start[1], point[2] - start[2]));
 
   return (

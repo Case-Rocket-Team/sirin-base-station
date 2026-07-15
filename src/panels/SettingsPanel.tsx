@@ -67,7 +67,7 @@ export default function SettingsPanel({ selectedSource }: Props) {
 
   return (
     <section className="rounded-[20px] border border-white/10 bg-slate-950/55 p-2 backdrop-blur">
-      <div className="grid gap-1 grid-cols-5">
+      <div className="responsive-form-grid">
         <SettingField label="LoRa WebSocket URL">
           <input
             value={draft.loraWebsocketUrl}
@@ -204,7 +204,7 @@ export default function SettingsPanel({ selectedSource }: Props) {
 
       <div className="mt-2 rounded-lg border border-white/8 bg-black/25 p-1.5 text-[9px] text-slate-200">
         <p className="font-mono text-[9px] uppercase tracking-[0.2em] text-slate-400">Demod Status</p>
-        <div className="mt-1 grid grid-cols-4 gap-1 text-[9px]">
+        <div className="mt-1 grid grid-cols-[repeat(auto-fit,minmax(9rem,1fr))] gap-1 text-[9px]">
           <div>
             <p className="text-slate-400 text-[8px]">Running</p>
             <p className="text-[9px]">{telemetry.demodStatus?.running ? "Y" : "N"}</p>

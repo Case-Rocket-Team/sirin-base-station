@@ -39,7 +39,7 @@ export default function UsbPanel() {
   };
 
   return (
-    <div className="grid gap-1 grid-cols-[280px_auto_auto_minmax(0,1fr)_160px]">
+    <div className="responsive-panel-grid responsive-panel-grid-usb">
       <TelemetryStatus
         source="usb"
         status={telemetry.status}

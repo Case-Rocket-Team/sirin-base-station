@@ -62,7 +62,7 @@ export default function ReplayPanel() {
   return (
     <div className="flex flex-col gap-1">
       <section className="rounded-[20px] border border-white/10 bg-slate-950/55 p-2 backdrop-blur">
-        <div className="grid gap-1 grid-cols-[minmax(0,1fr)_70px_70px_70px_70px_70px_70px]">
+        <div className="responsive-replay-controls">
           <input
             value={path}
             onChange={(event) => setPath(event.target.value)}
@@ -99,7 +99,7 @@ export default function ReplayPanel() {
         {(error || telemetry.replayStatus?.lastError) && <p className="mt-0.5 text-[9px] text-rose-300 line-clamp-1">{error ?? telemetry.replayStatus?.lastError}</p>}
       </section>
 
-      <section className="grid gap-1 grid-cols-[minmax(0,1fr)_200px]">
+      <section className="responsive-replay-content">
         <div className="rounded-[20px] border border-white/10 bg-slate-950/55 p-2 backdrop-blur">
           <p className="font-mono text-[10px] uppercase tracking-[0.35em] text-cyan-200/75">Replay Packet</p>
           <pre className="mt-1 h-[130px] overflow-auto rounded-lg border border-white/8 bg-black/35 p-1.5 text-[9px] text-slate-200">

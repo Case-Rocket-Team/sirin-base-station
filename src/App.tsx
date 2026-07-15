@@ -1,5 +1,6 @@
-import { useMemo, useState } from "react";
-import InitializationPanel from "./panels/InitializationPanel";
+import { useState } from "react";
+import HomePanel from "./panels/HomePanel";
+import WindowShell from "./panels/WindowShell";
 import TelemetryPanel from "./panels/TelemetryPanel";
 import UsbPanel from "./panels/UsbPanel";
 import RawDataPanel from "./panels/RawDataPanel";
@@ -9,7 +10,7 @@ import ReplayPanel from "./panels/ReplayPanel";
 import RecoveryPanel from "./panels/RecoveryPanel";
 import type { AppPage, TelemetrySource } from "./telemetry/types";
 
-const pages: Array<{ id: AppPage; label: string; description: string }> = [
+export const pages: Array<{ id: Exclude<AppPage, "home">; label: string; description: string }> = [
   { id: "overview", label: "Overview", description: "Flight overview and live telemetry" },
   { id: "raw", label: "Raw Data", description: "Inspect validated packets and manage recording" },
   { id: "timeline", label: "Timeline", description: "Track inferred mission events in sequence" },
@@ -20,35 +21,29 @@ const pages: Array<{ id: AppPage; label: string; description: string }> = [
 ];
 
 export default function App() {
-  const [activePage, setActivePage] = useState<AppPage>("overview");
+  const [activePage, setActivePage] = useState<AppPage>("home");
   const [selectedSource, setSelectedSource] = useState<TelemetrySource>("lora");
 
-  const activePageMeta = useMemo(
-    () => pages.find((page) => page.id === activePage) ?? pages[0],
-    [activePage],
-  );
+  const activePageMeta = pages.find((page) => page.id === activePage);
 
   return (
     <div className="h-screen bg-[radial-gradient(circle_at_top,rgba(57,132,255,0.24),transparent_32%),linear-gradient(180deg,#050814_0%,#09101b_48%,#05070e_100%)] text-slate-100 overflow-hidden">
-      <div className="flex h-screen flex-col px-1 py-1">
-        <InitializationPanel
-          activePage={activePage}
-          activePageDescription={activePageMeta.description}
-          pages={pages}
-          selectedSource={selectedSource}
-          onPageChange={setActivePage}
-          onSourceChange={setSelectedSource}
-        />
-
-        <div className="mt-1 flex-1 overflow-hidden">
-          {activePage === "overview" && <TelemetryPanel selectedSource={selectedSource} />}
-          {activePage === "raw" && <RawDataPanel selectedSource={selectedSource} />}
-          {activePage === "timeline" && <TimelinePanel selectedSource={selectedSource} />}
-          {activePage === "replay" && <ReplayPanel />}
-          {activePage === "recovery" && <RecoveryPanel />}
-          {activePage === "usb" && <UsbPanel />}
-          {activePage === "settings" && <SettingsPanel selectedSource={selectedSource} />}
-        </div>
+      <div className="app-viewport">
+        {activePage === "home" ? (
+          <HomePanel pages={pages} selectedSource={selectedSource} onPageChange={setActivePage} />
+        ) : (
+          <WindowShell title={activePageMeta?.label ?? "Window"} description={activePageMeta?.description ?? ""} onBack={() => setActivePage("home")} selectedSource={selectedSource} onSourceChange={setSelectedSource}>
+            <div className="app-window-content">
+              {activePage === "overview" && <TelemetryPanel selectedSource={selectedSource} />}
+              {activePage === "raw" && <RawDataPanel selectedSource={selectedSource} />}
+              {activePage === "timeline" && <TimelinePanel selectedSource={selectedSource} />}
+              {activePage === "replay" && <ReplayPanel />}
+              {activePage === "recovery" && <RecoveryPanel />}
+              {activePage === "usb" && <UsbPanel />}
+              {activePage === "settings" && <SettingsPanel selectedSource={selectedSource} />}
+            </div>
+          </WindowShell>
+        )}
       </div>
     </div>
   );

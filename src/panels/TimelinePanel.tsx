@@ -13,7 +13,7 @@ export default function TimelinePanel({ selectedSource }: Props) {
   const timeline = telemetry.timelineState;
 
   return (
-    <div className="grid gap-1 grid-cols-[280px_minmax(0,1fr)]">
+    <div className="responsive-panel-grid responsive-panel-grid-timeline">
       <TelemetryStatus
         source={selectedSource}
         status={telemetry.status}

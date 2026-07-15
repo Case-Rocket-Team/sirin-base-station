@@ -22,7 +22,7 @@ export default function AltitudeBar({ altitudeFt, minFt, maxFt, targetFt }: Prop
         </p>
       </div>
 
-      <div className="relative mt-2 h-[160px] rounded-[16px] border border-white/10 bg-[linear-gradient(180deg,rgba(255,64,64,0.65)_0%,rgba(255,194,77,0.65)_22%,rgba(73,255,168,0.68)_75%,rgba(255,194,77,0.65)_90%,rgba(255,64,64,0.65)_100%)] p-2">
+      <div className="altitude-track relative mt-2 rounded-[16px] border border-white/10 bg-[linear-gradient(180deg,rgba(255,64,64,0.65)_0%,rgba(255,194,77,0.65)_22%,rgba(73,255,168,0.68)_75%,rgba(255,194,77,0.65)_90%,rgba(255,64,64,0.65)_100%)] p-2">
         <div className="relative h-full rounded-[12px] border border-black/40 bg-[linear-gradient(180deg,rgba(7,11,20,0.15),rgba(7,11,20,0.7))]">
           <div className="absolute inset-x-2 bottom-0 rounded-b-[10px] bg-[linear-gradient(180deg,rgba(21,29,43,0.25),rgba(3,6,12,0.95))]" style={{ height: `${100 - percent}%` }} />
           <div className="absolute left-2 right-2 border-t border-dashed border-white/70" style={{ bottom: `${targetPercent}%` }} />

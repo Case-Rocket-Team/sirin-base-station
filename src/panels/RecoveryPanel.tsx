@@ -22,7 +22,7 @@ export default function RecoveryPanel() {
   const bearing = useMemo(() => calculateBearing(leftResolved.lat, leftResolved.lon, rightResolved.lat, rightResolved.lon), [leftResolved, rightResolved]);
 
   return (
-    <div className="grid gap-1 grid-cols-[280px_minmax(0,1fr)_minmax(0,1fr)_180px]">
+    <div className="responsive-panel-grid responsive-panel-grid-recovery">
       <TelemetryStatus
         source="lora"
         status={telemetry.status}
