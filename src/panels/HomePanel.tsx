@@ -11,7 +11,7 @@ export default function HomePanel({ pages, selectedSource, onPageChange }: Props
     <main className="home-screen">
       <section className="home-brand">
         <p className="eyebrow">Case Rocket Team</p>
-        <h1>Sirin Base</h1>
+        <h1>Sirin Base Station</h1>
         <p>Mission control interface</p>
       </section>
       <section className="home-statuses" aria-label="Connection status">

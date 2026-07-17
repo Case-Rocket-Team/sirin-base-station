@@ -7,9 +7,10 @@ type Props = {
   packet: SirinPacket | null;
   expectedPacketsPerSecond: number;
   staleTimeoutMs: number;
+  flightDuration?: number | null;
 };
 
-export default function TelemetryStatus({ source, status, packet, expectedPacketsPerSecond, staleTimeoutMs }: Props) {
+export default function TelemetryStatus({ source, status, packet, expectedPacketsPerSecond, staleTimeoutMs, flightDuration }: Props) {
   return (
     <div className="space-y-1">
       <PacketHealth
@@ -47,6 +48,12 @@ export default function TelemetryStatus({ source, status, packet, expectedPacket
                 <dt className="text-slate-400 text-[8px]">Lon</dt>
                 <dd className="text-[8px]">{displayMaybeFloat(packet?.fields.longitudeDeg, 3)}</dd>
               </div>
+              {flightDuration != null && (
+                <div className="col-span-2">
+                  <dt className="text-slate-400 text-[8px]">Flight Duration</dt>
+                  <dd className="text-[10px] font-semibold text-cyan-100">{formatDuration(flightDuration)}</dd>
+                </div>
+              )}
             </dl>
           </div>
         </div>
@@ -80,5 +87,11 @@ function StatusPill({ label, tone }: { label: string; tone: "emerald" | "amber" 
 
 function displayMaybeFloat(value: number | null | undefined, digits: number) {
   return typeof value === "number" ? value.toFixed(digits) : "--";
+}
+
+function formatDuration(seconds: number) {
+  const mins = Math.floor(seconds / 60);
+  const secs = Math.floor(seconds % 60);
+  return `${mins}:${secs.toString().padStart(2, "0")}`;
 }
 

@@ -1,5 +1,5 @@
 export type TelemetrySource = "lora" | "usb";
-export type AppPage = "home" | "overview" | "raw" | "timeline" | "replay" | "recovery" | "usb" | "settings";
+export type AppPage = "home" | "overview" | "raw" | "replay" | "recovery" | "usb" | "settings";
 export type LinkState = "disconnected" | "connecting" | "connected" | "error";
 export type RecordingFormat = "csv" | "jsonl";
 export type TimelineStage = "standby" | "launch" | "burnout" | "apogee" | "drogue" | "main" | "landed";
@@ -10,6 +10,19 @@ export type PacketFields = {
   expectedApogeeFt: number | null;
   speedMps: number | null;
   accelTotalG: number | null;
+  accelXG: number | null;
+  accelYG: number | null;
+  accelZG: number | null;
+  gyroXDps: number | null;
+  gyroYDps: number | null;
+  gyroZDps: number | null;
+  magXMt: number | null;
+  magYMt: number | null;
+  magZMt: number | null;
+  velocityXMps: number | null;
+  velocityYMps: number | null;
+  velocityZMps: number | null;
+  barometricPressurePa: number | null;
   gpsSatelliteCount: number | null;
   latitudeDeg: number | null;
   longitudeDeg: number | null;
