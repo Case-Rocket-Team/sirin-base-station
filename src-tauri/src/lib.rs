@@ -92,7 +92,7 @@ enum LinkState {
     Error,
 }
 
-#[derive(Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 enum TimelineStage {
     Standby,
@@ -1142,24 +1142,12 @@ fn detect_usb_device() -> Result<bool, String> {
     })
 }
 
+const METERS_TO_FEET: f64 = 3.280_839_895;
+const GRAVITY_MPS2: f64 = 9.806_65;
+const MICRO_G_PER_G: f64 = 1_000_000.0;
+
 fn normalize_packet(source: TelemetrySource, raw: Value, valid: bool) -> SirinPacket {
-    let fields = PacketFields {
-        flight_mode: find_string(&raw, &["flight_mode", "mode", "nominal_state"]),
-        altitude_agl_ft: find_number(&raw, &["altitude_agl_ft", "altitude_ft", "agl_ft"]),
-        expected_apogee_ft: find_number(&raw, &["expected_apogee_ft", "apogee_ft"]),
-        speed_mps: find_number(&raw, &["speed_mps", "velocity_mps", "vertical_speed_mps"]),
-        accel_total_g: find_number(&raw, &["accel_total_g", "acceleration_g", "accel_g"]),
-        gps_satellite_count: find_u64(&raw, &["gps_satellite_count", "num_satellites", "satellites"]),
-        latitude_deg: find_number(&raw, &["latitude_deg", "latitude"]),
-        longitude_deg: find_number(&raw, &["longitude_deg", "longitude"]),
-        position_x_m: find_number(&raw, &["position_x_m", "x_m", "x"]),
-        position_y_m: find_number(&raw, &["position_y_m", "y_m", "y"]),
-        position_z_m: find_number(&raw, &["position_z_m", "z_m", "z"]),
-        quat_w: find_number(&raw, &["quat_w", "qw", "w"]),
-        quat_x: find_number(&raw, &["quat_x", "qx"]),
-        quat_y: find_number(&raw, &["quat_y", "qy"]),
-        quat_z: find_number(&raw, &["quat_z", "qz"]),
-    };
+    let fields = extract_fields(&raw);
     SirinPacket {
         source,
         received_at_ms: now_ms(),
@@ -1169,6 +1157,105 @@ fn normalize_packet(source: TelemetrySource, raw: Value, valid: bool) -> SirinPa
         raw,
         fields,
     }
+}
+
+/// Pull the display fields out of an `OutPacket` telemetry packet by their real
+/// serde keys.
+///
+/// The firmware sends an externally-tagged `OutPacket` enum, so the useful data
+/// lives under either a `State` (`SirinState`) or `DataState` (`SirinDataState`)
+/// variant. Both LoRa (`RadioPacket<OutPacket>`) and USB (`{ id, callsign,
+/// packet }`) nest that enum, so we locate the variant object rather than
+/// assuming a fixed path, then read fields by exact key. This replaces an older
+/// fuzzy key-alias search whose aliases did not match the firmware's real field
+/// names (`altitude`, `apogee`, `vel`, `lat`/`lon`, quaternion `r`), which left
+/// every field null on the Telemetry view.
+fn extract_fields(raw: &Value) -> PacketFields {
+    let Some((variant, state)) = find_state_object(raw) else {
+        return PacketFields::default();
+    };
+    let is_data_state = variant == "DataState";
+
+    // `SirinDataState` carries top-level pos/vel/rot_quaternion; `SirinState`
+    // keeps the estimated equivalents under `nominal`.
+    let motion = if is_data_state {
+        Some(state)
+    } else {
+        state.get("nominal").and_then(Value::as_object)
+    };
+
+    let gps = state.get("gps_fix").and_then(Value::as_object);
+    let position = motion.and_then(|m| m.get("pos"));
+    let velocity = motion.and_then(|m| m.get("vel"));
+    let quaternion = motion
+        .and_then(|m| m.get("rot_quaternion"))
+        .and_then(Value::as_object);
+
+    let accel_total_g = if is_data_state {
+        // DataState carries no fused acceleration; use the raw IMU reading,
+        // which is `Result`-wrapped (`{ "Ok": { x, y, z } }`) and in micro-Gs.
+        state
+            .get("data")
+            .and_then(|data| data.get("imu"))
+            .and_then(|imu| imu.get("accel"))
+            .and_then(|accel| accel.get("Ok"))
+            .and_then(vec3_magnitude)
+            .map(|micro_g| micro_g / MICRO_G_PER_G)
+    } else {
+        // State: `nominal.accel` is a fused vector in m/s^2.
+        motion
+            .and_then(|m| m.get("accel"))
+            .and_then(vec3_magnitude)
+            .map(|mps2| mps2 / GRAVITY_MPS2)
+    };
+
+    PacketFields {
+        flight_mode: state.get("mode").and_then(Value::as_str).map(str::to_string),
+        altitude_agl_ft: obj_f64(state, "altitude").map(|m| m * METERS_TO_FEET),
+        expected_apogee_ft: obj_f64(state, "apogee").map(|m| m * METERS_TO_FEET),
+        speed_mps: velocity.and_then(vec3_magnitude),
+        accel_total_g,
+        gps_satellite_count: gps.and_then(|g| g.get("satellites")).and_then(Value::as_u64),
+        latitude_deg: gps.and_then(|g| g.get("lat")).and_then(Value::as_f64),
+        longitude_deg: gps.and_then(|g| g.get("lon")).and_then(Value::as_f64),
+        position_x_m: position.and_then(|p| p.get("x")).and_then(Value::as_f64),
+        position_y_m: position.and_then(|p| p.get("y")).and_then(Value::as_f64),
+        position_z_m: position.and_then(|p| p.get("z")).and_then(Value::as_f64),
+        quat_w: quaternion.and_then(|q| q.get("r")).and_then(Value::as_f64),
+        quat_x: quaternion.and_then(|q| q.get("x")).and_then(Value::as_f64),
+        quat_y: quaternion.and_then(|q| q.get("y")).and_then(Value::as_f64),
+        quat_z: quaternion.and_then(|q| q.get("z")).and_then(Value::as_f64),
+    }
+}
+
+/// Recursively locate the `State`/`DataState` variant object of an `OutPacket`
+/// inside a raw packet, returning the variant name and its inner object.
+fn find_state_object(raw: &Value) -> Option<(&'static str, &serde_json::Map<String, Value>)> {
+    match raw {
+        Value::Object(map) => {
+            if let Some(Value::Object(inner)) = map.get("DataState") {
+                return Some(("DataState", inner));
+            }
+            if let Some(Value::Object(inner)) = map.get("State") {
+                return Some(("State", inner));
+            }
+            map.values().find_map(find_state_object)
+        }
+        Value::Array(items) => items.iter().find_map(find_state_object),
+        _ => None,
+    }
+}
+
+fn obj_f64(obj: &serde_json::Map<String, Value>, key: &str) -> Option<f64> {
+    obj.get(key)?.as_f64()
+}
+
+/// Euclidean magnitude of a `{ x, y, z }` vector object.
+fn vec3_magnitude(value: &Value) -> Option<f64> {
+    let x = value.get("x")?.as_f64()?;
+    let y = value.get("y")?.as_f64()?;
+    let z = value.get("z")?.as_f64()?;
+    Some((x * x + y * y + z * z).sqrt())
 }
 
 fn parse_jsonl_replay(content: &str) -> Result<Vec<SirinPacket>, String> {
@@ -1243,14 +1330,6 @@ fn extract_callsign(value: &Value) -> Option<String> {
         }
     }
     None
-}
-
-fn find_number(value: &Value, keys: &[&str]) -> Option<f64> {
-    find_value(value, keys)?.as_f64()
-}
-
-fn find_u64(value: &Value, keys: &[&str]) -> Option<u64> {
-    find_value(value, keys)?.as_u64()
 }
 
 fn find_string(value: &Value, keys: &[&str]) -> Option<String> {
@@ -1389,5 +1468,93 @@ mod tests {
         let sample = r#"{"source":"replay","receivedAtMs":1,"sequence":1,"callsign":null,"valid":true,"raw":null,"fields":{"flightMode":"Standby","altitudeAglFt":1.0,"expectedApogeeFt":2.0,"speedMps":3.0,"accelTotalG":4.0,"gpsSatelliteCount":5,"latitudeDeg":6.0,"longitudeDeg":7.0,"positionXM":8.0,"positionYM":9.0,"positionZM":10.0,"quatW":1.0,"quatX":0.0,"quatY":0.0,"quatZ":0.0}}"#;
         let parsed = parse_jsonl_replay(sample).unwrap();
         assert_eq!(parsed.len(), 1);
+    }
+
+    fn approx(actual: Option<f64>, expected: f64) {
+        let value = actual.expect("field should be populated");
+        assert!((value - expected).abs() < 1e-3, "expected {expected}, got {value}");
+    }
+
+    // Matches the USB emit shape: { id, callsign, packet: { DataState: {...} } }.
+    // Firmware sends altitude/apogee in meters, IMU accel as micro-Gs wrapped in
+    // a serde `Result`, and top-level pos/vel that must NOT be confused with the
+    // ECEF pos/vel nested inside gps_fix.
+    #[test]
+    fn extract_fields_data_state_maps_real_keys() {
+        let raw = serde_json::json!({
+            "id": 0,
+            "callsign": [],
+            "packet": { "DataState": {
+                "data": { "imu": { "accel": { "Ok": { "x": 1_000_000, "y": 0, "z": 0 } } } },
+                "mode": "Flight",
+                "altitude": 100.0,
+                "apogee": 250.0,
+                "gps_fix": {
+                    "satellites": 7,
+                    "pos": { "x": 1, "y": 2, "z": 3 },
+                    "vel": { "x": 9, "y": 9, "z": 9 },
+                    "lat": 42.5,
+                    "lon": -71.0
+                },
+                "pos": { "x": 10.0, "y": 20.0, "z": 30.0 },
+                "vel": { "x": 3.0, "y": 4.0, "z": 0.0 },
+                "rot_quaternion": { "r": 1.0, "x": 0.0, "y": 0.0, "z": 0.0 }
+            }}
+        });
+        let f = extract_fields(&raw);
+        assert_eq!(f.flight_mode.as_deref(), Some("Flight"));
+        approx(f.altitude_agl_ft, 100.0 * METERS_TO_FEET);
+        approx(f.expected_apogee_ft, 250.0 * METERS_TO_FEET);
+        approx(f.speed_mps, 5.0); // |(3,4,0)|
+        approx(f.accel_total_g, 1.0); // 1_000_000 micro-Gs
+        assert_eq!(f.gps_satellite_count, Some(7));
+        approx(f.latitude_deg, 42.5);
+        approx(f.longitude_deg, -71.0);
+        // Must read top-level pos, not gps_fix.pos.
+        approx(f.position_x_m, 10.0);
+        approx(f.position_y_m, 20.0);
+        approx(f.position_z_m, 30.0);
+        approx(f.quat_w, 1.0);
+        approx(f.quat_x, 0.0);
+    }
+
+    // SirinState keeps estimated pos/vel/accel/quaternion under `nominal`,
+    // accel is in m/s^2, and apogee may be null (Option).
+    #[test]
+    fn extract_fields_state_reads_nominal_block() {
+        let raw = serde_json::json!({
+            "id": 0,
+            "callsign": [],
+            "packet": { "State": {
+                "mode": "Standby",
+                "gps_fix": { "satellites": 5, "pos": { "x": 9, "y": 9, "z": 9 }, "lat": 1.0, "lon": 2.0 },
+                "altitude": 50.0,
+                "apogee": null,
+                "nominal": {
+                    "pos": { "x": 7.0, "y": 8.0, "z": 9.0 },
+                    "vel": { "x": 0.0, "y": 0.0, "z": 6.0 },
+                    "accel": { "x": GRAVITY_MPS2, "y": 0.0, "z": 0.0 },
+                    "rot_quaternion": { "r": 0.0, "x": 1.0, "y": 0.0, "z": 0.0 }
+                },
+                "is_ecef": false
+            }}
+        });
+        let f = extract_fields(&raw);
+        assert_eq!(f.flight_mode.as_deref(), Some("Standby"));
+        approx(f.altitude_agl_ft, 50.0 * METERS_TO_FEET);
+        assert_eq!(f.expected_apogee_ft, None);
+        approx(f.speed_mps, 6.0);
+        approx(f.accel_total_g, 1.0); // one g in m/s^2
+        assert_eq!(f.gps_satellite_count, Some(5));
+        approx(f.position_x_m, 7.0); // from nominal, not gps_fix
+        approx(f.quat_x, 1.0);
+    }
+
+    #[test]
+    fn extract_fields_non_telemetry_packet_is_empty() {
+        let raw = serde_json::json!({ "id": 0, "callsign": [], "packet": { "Mode": "Standby" } });
+        let f = extract_fields(&raw);
+        assert_eq!(f.flight_mode, None);
+        assert_eq!(f.altitude_agl_ft, None);
     }
 }
