@@ -1,5 +1,5 @@
 import { Canvas, useFrame } from "@react-three/fiber";
-import { Environment, Grid, OrbitControls, useGLTF } from "@react-three/drei";
+import { Environment, OrbitControls, useGLTF } from "@react-three/drei";
 import { Suspense, useMemo, useRef } from "react";
 import * as THREE from "three";
 
@@ -27,12 +27,26 @@ export default function RocketOrientation({ quatW, quatX, quatY, quatZ }: Props)
         <Environment preset="city" />
         <RocketModel quaternion={quaternion} />
       </Suspense>
-      <Grid args={[1, 1]} cellSize={0.2} sectionSize={0.2} sectionColor="#00e5ff" cellColor="#00e5ff" fadeDistance={3} fadeStrength={1} />
-      <Grid args={[1, 1]} cellSize={0.2} sectionSize={0.2} sectionColor="#00e5ff" cellColor="#00e5ff" fadeDistance={3} fadeStrength={1} rotation={[Math.PI / 2, 0, 0]} />
-      <Grid args={[1, 1]} cellSize={0.2} sectionSize={0.2} sectionColor="#00e5ff" cellColor="#00e5ff" fadeDistance={3} fadeStrength={1} rotation={[0, 0, Math.PI / 2]} />
+      <DoubleSidedGrid position={[1.5, 0, 1.5]} />
+      <DoubleSidedGrid position={[1.5, 1.5, 0]} rotation={[Math.PI / 2, 0, 0]} />
+      <DoubleSidedGrid position={[0, 1.5, 1.5]} rotation={[0, 0, Math.PI / 2]} />
       <axesHelper args={[1.15]} />
       <OrbitControls enablePan={false} enableZoom={false} />
     </Canvas>
+  );
+}
+
+function DoubleSidedGrid({ position, rotation }: { position: [number, number, number]; rotation?: [number, number, number] }) {
+  const gridRef = useRef<THREE.GridHelper>(null);
+
+  useMemo(() => {
+    if (gridRef.current) {
+      gridRef.current.material.color.set("#00e5ff");
+    }
+  }, []);
+
+  return (
+    <gridHelper ref={gridRef} args={[3, 15]} position={position} rotation={rotation} />
   );
 }
 
@@ -46,7 +60,7 @@ function RocketModel({ quaternion }: { quaternion: THREE.Quaternion }) {
     }
   });
 
-  return <primitive ref={ref} object={scene.clone()} scale={1.2} position={[0.5, 0.3, 0.5]} />;
+  return <primitive ref={ref} object={scene.clone()} scale={0.45} position={[0.5, 0.3, 0.5]} />;
 }
 
 function normalizeQuaternion(

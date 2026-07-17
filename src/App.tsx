@@ -5,7 +5,6 @@ import TelemetryPanel from "./panels/TelemetryPanel";
 import UsbPanel from "./panels/UsbPanel";
 import RawDataPanel from "./panels/RawDataPanel";
 import SettingsPanel from "./panels/SettingsPanel";
-import TimelinePanel from "./panels/TimelinePanel";
 import ReplayPanel from "./panels/ReplayPanel";
 import RecoveryPanel from "./panels/RecoveryPanel";
 import type { AppPage, TelemetrySource } from "./telemetry/types";
@@ -13,7 +12,6 @@ import type { AppPage, TelemetrySource } from "./telemetry/types";
 export const pages: Array<{ id: Exclude<AppPage, "home">; label: string; description: string }> = [
   { id: "overview", label: "Overview", description: "Flight overview and live telemetry" },
   { id: "raw", label: "Raw Data", description: "Inspect validated packets and manage recording" },
-  { id: "timeline", label: "Timeline", description: "Track inferred mission events in sequence" },
   { id: "replay", label: "Replay", description: "Load recorded telemetry and play it back through the UI" },
   { id: "recovery", label: "Recovery", description: "Compare radio callsigns and compute a bearing between positions" },
   { id: "usb", label: "USB Console", description: "USB status and direct Sirin telemetry" },
@@ -36,7 +34,6 @@ export default function App() {
             <div className="app-window-content">
               {activePage === "overview" && <TelemetryPanel selectedSource={selectedSource} />}
               {activePage === "raw" && <RawDataPanel selectedSource={selectedSource} />}
-              {activePage === "timeline" && <TimelinePanel selectedSource={selectedSource} />}
               {activePage === "replay" && <ReplayPanel />}
               {activePage === "recovery" && <RecoveryPanel />}
               {activePage === "usb" && <UsbPanel />}

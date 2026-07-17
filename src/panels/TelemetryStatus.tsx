@@ -12,7 +12,7 @@ type Props = {
 
 export default function TelemetryStatus({ source, status, packet, expectedPacketsPerSecond, staleTimeoutMs, flightDuration }: Props) {
   return (
-    <div className="space-y-1">
+    <div className="space-y-1 min-w-0">
       <PacketHealth
         source={source}
         status={status}
@@ -21,15 +21,15 @@ export default function TelemetryStatus({ source, status, packet, expectedPacket
         staleTimeoutMs={staleTimeoutMs}
       />
 
-      <aside className="rounded-[20px] border border-white/10 bg-slate-950/55 p-2 backdrop-blur">
-        <p className="font-mono text-[10px] uppercase tracking-[0.35em] text-cyan-200/75">{source.toUpperCase()} Detail</p>
+      <aside className="rounded-[20px] border border-white/10 bg-slate-950/55 p-2 backdrop-blur min-w-0">
+        <p className="font-mono text-[10px] uppercase tracking-[0.35em] text-cyan-200/75 truncate">{source.toUpperCase()} Detail</p>
         <div className="mt-1 space-y-1">
           <StatusPill label={status?.state ?? "disconnected"} tone={statusTone(status?.state ?? "disconnected")} />
-          <div className="rounded-lg border border-white/8 bg-black/20 p-2 text-xs text-slate-300">
+          <div className="rounded-lg border border-white/8 bg-black/20 p-2 text-xs text-slate-300 min-w-0 w-full overflow-hidden">
             <p className="font-mono text-[9px] uppercase tracking-[0.25em] text-slate-400">Message</p>
-            <p className="mt-1 text-[10px] text-slate-200 line-clamp-2">{status?.message ?? "Waiting..."}</p>
+            <p className="mt-1 text-[10px] text-slate-200 whitespace-normal break-words w-full">{status?.message ?? "Waiting..."}</p>
           </div>
-          <div className="rounded-lg border border-white/8 bg-black/20 p-2">
+          <div className="rounded-lg border border-white/8 bg-black/20 p-2 min-w-0">
             <p className="font-mono text-[9px] uppercase tracking-[0.25em] text-slate-400">Snapshot</p>
             <dl className="mt-1 grid grid-cols-2 gap-1 text-[9px] text-slate-200">
               <div>

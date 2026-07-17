@@ -3,12 +3,15 @@ import RocketOrientation from "./RocketOrientation";
 import TelemetryBar from "./TelemetryBar";
 import TelemetryStatus from "./TelemetryStatus";
 import ThreeDPosition from "./3DPosition";
+import TimelineBar from "./TimelineBar";
 import { useTelemetrySource } from "../telemetry/useTelemetrySource";
-import type { TelemetrySource } from "../telemetry/types";
+import type { TelemetrySource, TimelineStage } from "../telemetry/types";
 
 type Props = {
   selectedSource: TelemetrySource;
 };
+
+const orderedStages: TimelineStage[] = ["standby", "launch", "burnout", "apogee", "drogue", "main", "landed"];
 
 export default function TelemetryPanel({ selectedSource }: Props) {
   const telemetry = useTelemetrySource(selectedSource);
@@ -56,6 +59,7 @@ export default function TelemetryPanel({ selectedSource }: Props) {
       </div>
 
       <div className="dashboard-card dashboard-telemetry">
+        <TimelineBar timeline={telemetry.timelineState} />
         <TelemetryBar altitudeFt={fields?.altitudeAglFt ?? null} apogeeFt={fields?.expectedApogeeFt ?? null} flightMode={fields?.flightMode ?? null} speedMps={fields?.speedMps ?? null} accelTotalG={fields?.accelTotalG ?? null} />
       </div>
     </div>

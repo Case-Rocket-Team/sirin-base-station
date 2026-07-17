@@ -71,6 +71,12 @@ export default function RawDataPanel({ selectedSource }: Props) {
             <DataBox label="Mode" value={telemetry.packet?.fields.flightMode ?? "--"} />
             <DataBox label="Apogee" value={formatValue(telemetry.packet?.fields.expectedApogeeFt, "ft")} />
             <DataBox label="Barometer" value={formatValue(telemetry.packet?.fields.barometricPressurePa, "Pa")} />
+
+            <p className="font-semibold text-cyan-300 mb-1 mt-2">GPS</p>
+            <DataBox label="Lat" value={formatValue(telemetry.packet?.fields.latitudeDeg, "°", 4)} />
+            <DataBox label="Lon" value={formatValue(telemetry.packet?.fields.longitudeDeg, "°", 4)} />
+            <DataBox label="Sats" value={telemetry.packet?.fields.gpsSatelliteCount != null ? String(telemetry.packet.fields.gpsSatelliteCount) : "--"} />
+            <DataBox label="Seq" value={String(telemetry.packet?.sequence ?? "--")} />
           </div>
 
           <div>
@@ -102,12 +108,6 @@ export default function RawDataPanel({ selectedSource }: Props) {
             <DataBox label="X" value={formatValue(telemetry.packet?.fields.magXMt, "", 2)} />
             <DataBox label="Y" value={formatValue(telemetry.packet?.fields.magYMt, "", 2)} />
             <DataBox label="Z" value={formatValue(telemetry.packet?.fields.magZMt, "", 2)} />
-
-            <p className="font-semibold text-cyan-300 mb-1 mt-2">GPS</p>
-            <DataBox label="Lat" value={formatValue(telemetry.packet?.fields.latitudeDeg, "°", 4)} />
-            <DataBox label="Lon" value={formatValue(telemetry.packet?.fields.longitudeDeg, "°", 4)} />
-            <DataBox label="Sats" value={telemetry.packet?.fields.gpsSatelliteCount != null ? String(telemetry.packet.fields.gpsSatelliteCount) : "--"} />
-            <DataBox label="Seq" value={String(telemetry.packet?.sequence ?? "--")} />
           </div>
         </div>
       </div>
