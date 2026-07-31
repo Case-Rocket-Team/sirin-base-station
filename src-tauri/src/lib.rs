@@ -1,7 +1,9 @@
 use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use sirin_shared::packet::{InPacket, OutPacket, RadioPacket, MAX_OUT_PACKET_SIZE};
+use sirin_shared::config::SirinConfig;
+use sirin_shared::mode::SirinMode;
+use sirin_shared::packet::{InPacket, OutPacket, RadioPacket, MAX_OUT_PACKET_SIZE, FlightHeader, LogEntry, ByteArrayStr};
 use sirin_shared::song::{FromSong, SongSize, ToSong};
 use sirin_shared::usb::{USB_EP_IN_ADDR, USB_EP_OUT_ADDR, USB_PID, USB_VID};
 use std::fs::{create_dir_all, read_to_string, File};
@@ -11,7 +13,7 @@ use std::process::{Child, Command, Stdio};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Emitter, Manager, State};
-use tokio::sync::{Mutex, RwLock};
+use tokio::sync::{Mutex, RwLock, mpsc, oneshot};
 use tokio_tungstenite::{connect_async, tungstenite::protocol::Message};
 
 const LORA_PACKET_EVENT: &str = "telemetry://lora/packet";
@@ -22,6 +24,36 @@ const USB_STATUS_EVENT: &str = "telemetry://usb/status";
 const TIMELINE_EVENT: &str = "telemetry://timeline/state";
 const REPLAY_STATUS_EVENT: &str = "telemetry://replay/status";
 const DEMOD_STATUS_EVENT: &str = "telemetry://demod/status";
+const USB_FLIGHT_ENTRY_EVENT: &str = "telemetry://usb/flight_entry";
+
+enum PendingReply {
+    Config(oneshot::Sender<Result<SirinConfig, String>>),
+    Mode(oneshot::Sender<Result<SirinMode, String>>),
+    Flights(mpsc::UnboundedSender<Result<(u16, sirin_shared::packet::FlightHeader), String>>, oneshot::Sender<Result<(), String>>),
+    Flight(mpsc::UnboundedSender<Result<LogEntry, String>>, oneshot::Sender<Result<(), String>>),
+    Drain(oneshot::Sender<Result<(), String>>),
+}
+
+struct UsbCommand {
+    packet: InPacket,
+    reply: Option<PendingReply>,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct UsbConfigPayload {
+    nickname: String,
+    callsign: String,
+    id: u16,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct FlightSummary {
+    index: u16,
+    date_label: String,
+    timestamp_ms: Option<u64>,
+}
 
 const DEFAULT_LORA_URL: &str = "ws://localhost:8765";
 const DEFAULT_EXPECTED_PPS: f64 = 10.0;
@@ -368,6 +400,7 @@ struct TelemetryState {
     timeline: Arc<RwLock<TimelineState>>,
     replay: Arc<Mutex<ReplayManager>>,
     demod: Arc<Mutex<DemodManager>>,
+    usb_cmd_tx: Arc<RwLock<Option<mpsc::UnboundedSender<UsbCommand>>>>,
 }
 
 impl TelemetryState {
@@ -387,6 +420,7 @@ impl TelemetryState {
                 child: None,
                 status: demod_status,
             })),
+            usb_cmd_tx: Arc::new(RwLock::new(None)),
         }
     }
 }
@@ -489,6 +523,266 @@ async fn send_usb_command(state: State<'_, TelemetryState>, request: UsbCommandR
     status.message = Some(format!("USB command sent: {command}"));
     status.updated_at_ms = now_ms();
     Ok(format!("Sent {command}"))
+}
+
+#[tauri::command]
+async fn usb_reboot(state: State<'_, TelemetryState>) -> Result<(), String> {
+    let tx = state.usb_cmd_tx.read().await.clone().ok_or_else(|| "USB not connected".to_string())?;
+    tx.send(UsbCommand {
+        packet: InPacket::Reboot,
+        reply: None,
+    }).map_err(|_| "USB session closed".to_string())
+}
+
+#[tauri::command]
+async fn usb_query_config(state: State<'_, TelemetryState>) -> Result<UsbConfigPayload, String> {
+    let tx = state.usb_cmd_tx.read().await.clone().ok_or_else(|| "USB not connected".to_string())?;
+    let (reply_tx, reply_rx) = oneshot::channel();
+    tx.send(UsbCommand {
+        packet: InPacket::QueryConfig,
+        reply: Some(PendingReply::Config(reply_tx)),
+    }).map_err(|_| "USB session closed".to_string())?;
+
+    let config = tokio::time::timeout(Duration::from_secs(5), reply_rx)
+        .await
+        .map_err(|_| "USB command timed out".to_string())?
+        .map_err(|_| "USB session closed".to_string())??;
+
+    Ok(UsbConfigPayload {
+        nickname: config.nickname.as_str().to_string(),
+        callsign: config.callsign.as_str().to_string(),
+        id: config.id,
+    })
+}
+
+#[tauri::command]
+async fn usb_set_config(state: State<'_, TelemetryState>, nickname: String, callsign: String, id: u16) -> Result<UsbConfigPayload, String> {
+    let tx = state.usb_cmd_tx.read().await.clone().ok_or("USB not connected")?;
+    let (reply_tx, reply_rx) = oneshot::channel();
+
+    let config_nickname = <[u8; 32] as ByteArrayStr>::from_str(&nickname)
+        .map_err(|_| "Nickname is too long (max 32 bytes)".to_string())?;
+    let config_callsign = <[u8; 8] as ByteArrayStr>::from_str(&callsign)
+        .map_err(|_| "Callsign is too long (max 8 bytes)".to_string())?;
+
+    let config = SirinConfig {
+        nickname: config_nickname,
+        callsign: config_callsign,
+        id,
+    };
+
+    tx.send(UsbCommand {
+        packet: InPacket::SetConfig(config.clone()),
+        reply: Some(PendingReply::Config(reply_tx)),
+    }).map_err(|_| "USB session closed".to_string())?;
+
+    let result = tokio::time::timeout(Duration::from_secs(5), reply_rx)
+        .await
+        .map_err(|_| "USB command timed out".to_string())?
+        .map_err(|_| "USB session closed".to_string())??;
+
+    Ok(UsbConfigPayload {
+        nickname: result.nickname.as_str().to_string(),
+        callsign: result.callsign.as_str().to_string(),
+        id: result.id,
+    })
+}
+
+#[tauri::command]
+async fn usb_query_mode(state: State<'_, TelemetryState>) -> Result<String, String> {
+    let tx = state.usb_cmd_tx.read().await.clone().ok_or_else(|| "USB not connected".to_string())?;
+    let (reply_tx, reply_rx) = oneshot::channel();
+    tx.send(UsbCommand {
+        packet: InPacket::QueryMode,
+        reply: Some(PendingReply::Mode(reply_tx)),
+    }).map_err(|_| "USB session closed".to_string())?;
+
+    let mode = tokio::time::timeout(Duration::from_secs(5), reply_rx)
+        .await
+        .map_err(|_| "USB command timed out".to_string())?
+        .map_err(|_| "USB session closed".to_string())??;
+
+    Ok(mode.to_string())
+}
+
+#[tauri::command]
+async fn usb_set_mode(state: State<'_, TelemetryState>, mode_str: String) -> Result<String, String> {
+    let tx = state.usb_cmd_tx.read().await.clone().ok_or_else(|| "USB not connected".to_string())?;
+    let (reply_tx, reply_rx) = oneshot::channel();
+
+    let mode = match mode_str.to_ascii_lowercase().as_str() {
+        "standby" => SirinMode::Standby,
+        "flight" => SirinMode::Flight,
+        "landed" => SirinMode::Landed,
+        _ => return Err("Invalid mode. Must be 'standby', 'flight', or 'landed'".to_string()),
+    };
+
+    tx.send(UsbCommand {
+        packet: InPacket::SetMode(mode),
+        reply: Some(PendingReply::Mode(reply_tx)),
+    }).map_err(|_| "USB session closed".to_string())?;
+
+    let result = tokio::time::timeout(Duration::from_secs(5), reply_rx)
+        .await
+        .map_err(|_| "USB command timed out".to_string())?
+        .map_err(|_| "USB session closed".to_string())??;
+
+    Ok(result.to_string())
+}
+
+#[tauri::command]
+async fn usb_query_flights(state: State<'_, TelemetryState>) -> Result<Vec<FlightSummary>, String> {
+    let tx = state.usb_cmd_tx.read().await.clone().ok_or_else(|| "USB not connected".to_string())?;
+    let (data_tx, mut data_rx) = mpsc::unbounded_channel();
+    let (term_tx, term_rx) = oneshot::channel();
+
+    tx.send(UsbCommand {
+        packet: InPacket::QueryFlights,
+        reply: Some(PendingReply::Flights(data_tx, term_tx)),
+    }).map_err(|_| "USB session closed".to_string())?;
+
+    // Wait for stream to complete
+    tokio::time::timeout(Duration::from_secs(10), term_rx)
+        .await
+        .map_err(|_| "USB command timed out".to_string())?
+        .map_err(|_| "USB session closed".to_string())??;
+
+    let mut flights = Vec::new();
+    while let Ok(header_result) = data_rx.try_recv() {
+        match header_result {
+            Ok((index, header)) => {
+                let timestamp_ms = header.time_reference.0.as_ref().map(|t| t.ms_since_epoch);
+                let date_label = format_flight_date(header.time_reference.0.clone());
+                flights.push(FlightSummary {
+                    index,
+                    date_label,
+                    timestamp_ms,
+                });
+            }
+            Err(_) => break,
+        }
+    }
+
+    Ok(flights)
+}
+
+#[tauri::command]
+async fn usb_export_flight(state: State<'_, TelemetryState>, index: u16) -> Result<String, String> {
+    let tx = state.usb_cmd_tx.read().await.clone().ok_or_else(|| "USB not connected".to_string())?;
+    let (data_tx, mut data_rx) = mpsc::unbounded_channel();
+    let (term_tx, mut term_rx) = oneshot::channel();
+
+    tx.send(UsbCommand {
+        packet: InPacket::ReadFlight(index),
+        reply: Some(PendingReply::Flight(data_tx, term_tx)),
+    }).map_err(|_| "USB session closed".to_string())?;
+
+    let config = state.config.read().await.clone();
+    let directory = resolve_workspace_path(&config.recording_directory);
+    create_dir_all(&directory).map_err(|err| err.to_string())?;
+
+    let filename = format!("flight_{:03}.csv", index);
+    let path = directory.join(&filename);
+    let mut file = std::fs::File::create(&path).map_err(|err| err.to_string())?;
+
+    // Write CSV header
+    writeln!(file, "time (ms), flight_mode, data_altitude (m), state_altitude (m), apogee(m), GPS_lat (deg), GPS_lon (deg), GPS_ecef_x (m), GPS_ecef_y (m), GPS_ecef_z (m), pos_x (deg), pos_y (deg), pos_z (deg), vel_x (m/s), vel_y (m/s), vel_z (m/s), pressure (Pa),temp (C),accel_x (µG),accel_y (µG),accel_z (µG),ang_vel_x (µ°/s),ang_vel_y (µ°/s),ang_vel_z (µ°/s),high_g_x (µG),high_g_y (µG),high_g_z (µG),mag_x (G),mag_y (G),mag_z (G)")
+        .map_err(|err| err.to_string())?;
+
+    let mut entry_count = 0;
+
+    // Collect entries and write to CSV
+    loop {
+        if let Ok(entry_result) = data_rx.try_recv() {
+            match entry_result {
+                Ok(entry) => {
+                    if let sirin_shared::packet::Log::DataState(datastate) = entry.log {
+                        let imu_accel = datastate.data.imu.accel.as_ref().ok();
+                        let ang_vel = datastate.data.imu.angular_vel.as_ref().ok();
+                        let high_g_imu = datastate.data.high_g_imu.accel.as_ref().ok();
+                        let mag = datastate.data.magnetometer.mag.as_ref().ok();
+                        let baro_pressure = datastate.data.baro.pressure.as_ref().ok().map(|p| p.value);
+                        let baro_temp = datastate.data.baro.temperature.as_ref().ok().map(|t| t.value);
+
+                        writeln!(file, "{},{},{},{:?},{:?},{:?},{:?},{:?},{:?},{:?},{:?},{:?},{:?},{:?},{:?},{:?},{:?},{:?},{:?},{:?},{:?},{:?},{:?},{:?},{:?},{:?},{:?},{:?},{:?},{:?}",
+                            datastate.data.time.value,
+                            datastate.mode,
+                            datastate.data.altitude.value,
+                            datastate.altitude.value,
+                            datastate.apogee.map(|a| a.value),
+                            datastate.gps_fix.lat,
+                            datastate.gps_fix.lon,
+                            datastate.gps_fix.pos.x.value,
+                            datastate.gps_fix.pos.y.value,
+                            datastate.gps_fix.pos.z.value,
+                            datastate.pos.x.value,
+                            datastate.pos.y.value,
+                            datastate.pos.z.value,
+                            datastate.vel.x.value,
+                            datastate.vel.y.value,
+                            datastate.vel.z.value,
+                            baro_pressure,
+                            baro_temp,
+                            imu_accel.map(|a| a.x),
+                            imu_accel.map(|a| a.y),
+                            imu_accel.map(|a| a.z),
+                            ang_vel.map(|a| a.x),
+                            ang_vel.map(|a| a.y),
+                            ang_vel.map(|a| a.z),
+                            high_g_imu.map(|a| a.x),
+                            high_g_imu.map(|a| a.y),
+                            high_g_imu.map(|a| a.z),
+                            mag.map(|m| m.x),
+                            mag.map(|m| m.y),
+                            mag.map(|m| m.z),
+                        ).map_err(|err| err.to_string())?;
+                        entry_count += 1;
+                    }
+                }
+                Err(_) => break,
+            }
+        } else {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+            // Check if terminator arrived
+            match tokio::time::timeout(Duration::from_millis(1), &mut term_rx).await {
+                Ok(Ok(Ok(()))) => break,
+                Ok(Ok(Err(e))) => return Err(e),
+                Err(_) => continue,
+                _ => break,
+            }
+        }
+    }
+
+    Ok(path.to_string_lossy().to_string())
+}
+
+#[tauri::command]
+async fn usb_erase_flash(state: State<'_, TelemetryState>) -> Result<(), String> {
+    let tx = state.usb_cmd_tx.read().await.clone().ok_or_else(|| "USB not connected".to_string())?;
+    let (reply_tx, reply_rx) = oneshot::channel();
+
+    tx.send(UsbCommand {
+        packet: InPacket::EraseFlash(sirin_shared::song::magic::MagicU8::<0xA8>),
+        reply: Some(PendingReply::Drain(reply_tx)),
+    }).map_err(|_| "USB session closed".to_string())?;
+
+    tokio::time::timeout(Duration::from_secs(30), reply_rx)
+        .await
+        .map_err(|_| "Erase timed out (device may still be erasing)".to_string())?
+        .map_err(|_| "USB session closed".to_string())?;
+    Ok(())
+}
+
+fn format_flight_date(time_ref: Option<sirin_shared::time::AbsoluteTimeReference>) -> String {
+    match time_ref {
+        Some(tr) => {
+            use chrono::{DateTime, Utc};
+            let duration = Duration::from_millis(tr.ms_since_epoch);
+            let datetime: DateTime<Utc> = (std::time::UNIX_EPOCH + duration).into();
+            datetime.format("%a, %b %d, %Y at %I:%M%p").to_string()
+        }
+        None => "Unknown time".to_string(),
+    }
 }
 
 #[tauri::command]
@@ -879,18 +1173,73 @@ fn read_usb_session(app: AppHandle) {
         return;
     }
     tauri::async_runtime::block_on(update_status(&app, &state, TelemetrySource::Usb, LinkState::Connected, Some("Streaming USB telemetry".into()), true));
+
+    // Create command channel for USB command multiplexing
+    let (cmd_tx, mut cmd_rx) = mpsc::unbounded_channel::<UsbCommand>();
+    tauri::async_runtime::block_on(async {
+        *state.usb_cmd_tx.write().await = Some(cmd_tx);
+    });
+
     let mut buf = vec![0u8; MAX_OUT_PACKET_SIZE * 128 * 8];
+    let mut pending_reply: Option<PendingReply> = None;
+    let mut pending_deadline: Option<std::time::Instant> = None;
+
     loop {
+        // 1. Drain at most one queued command if no reply is pending
+        if pending_reply.is_none() {
+            if let Ok(cmd) = cmd_rx.try_recv() {
+                // Write the command packet
+                let mut cmd_buf = [0u8; MAX_OUT_PACKET_SIZE];
+                if let Err(err) = cmd.packet.to_song(&mut cmd_buf) {
+                    if let Some(reply) = cmd.reply {
+                        let _ = dispatch_error(reply, format!("Failed to encode command: {err:?}"));
+                    }
+                    continue;
+                }
+                if let Err(err) = handle.write_bulk(USB_EP_OUT_ADDR, &cmd_buf[..cmd.packet.song_size()], Duration::from_secs(5)) {
+                    if let Some(reply) = cmd.reply {
+                        let _ = dispatch_error(reply, format!("Failed to write USB command: {err}"));
+                    }
+                    continue;
+                }
+                pending_reply = cmd.reply;
+                pending_deadline = Some(std::time::Instant::now() + Duration::from_secs(5));
+            }
+        }
+
+        // 2. Check if pending reply has timed out
+        if let Some(deadline) = pending_deadline {
+            if std::time::Instant::now() > deadline {
+                if let Some(reply) = pending_reply.take() {
+                    let _ = dispatch_error(reply, "USB command timed out (no response from device)".into());
+                }
+                pending_deadline = None;
+            }
+        }
+
+        // 3. Timed blocking read
         let len = match handle.read_bulk(USB_EP_IN_ADDR, &mut buf, Duration::from_millis(250)) {
             Ok(len) => len,
             Err(rusb::Error::Timeout) => continue,
             Err(rusb::Error::NoDevice) => {
                 let _ = handle.release_interface(0);
+                if let Some(reply) = pending_reply.take() {
+                    let _ = dispatch_error(reply, "USB device disconnected".into());
+                }
+                tauri::async_runtime::block_on(async {
+                    *state.usb_cmd_tx.write().await = None;
+                });
                 tauri::async_runtime::block_on(update_status(&app, &state, TelemetrySource::Usb, LinkState::Disconnected, Some("USB device disconnected".into()), false));
                 return;
             }
             Err(err) => {
                 let _ = handle.release_interface(0);
+                if let Some(reply) = pending_reply.take() {
+                    let _ = dispatch_error(reply, format!("USB read error: {err}"));
+                }
+                tauri::async_runtime::block_on(async {
+                    *state.usb_cmd_tx.write().await = None;
+                });
                 tauri::async_runtime::block_on(update_status(&app, &state, TelemetrySource::Usb, LinkState::Error, Some(format!("USB read error: {err}")), false));
                 return;
             }
@@ -898,20 +1247,110 @@ fn read_usb_session(app: AppHandle) {
         if len == 0 {
             continue;
         }
+
+        // 4. Dispatch incoming packet
         match OutPacket::from_song(&buf[..len]) {
             Ok(packet) => {
-                let raw = serde_json::json!({
-                    "id": 0,
-                    "callsign": [],
-                    "packet": serde_json::to_value(&packet).unwrap_or(Value::Null)
-                });
-                tauri::async_runtime::block_on(handle_packet(&app, &state, normalize_packet(TelemetrySource::Usb, raw, true)));
+                dispatch_usb_packet(&app, &state, &mut pending_reply, &mut pending_deadline, packet);
             }
             Err(_) => {
-                tauri::async_runtime::block_on(mark_rejected(&app, &state, TelemetrySource::Usb, "Rejected corrupt USB packet"));
+                if pending_reply.is_none() {
+                    tauri::async_runtime::block_on(mark_rejected(&app, &state, TelemetrySource::Usb, "Rejected corrupt USB packet"));
+                }
             }
         }
     }
+}
+
+fn dispatch_error(reply: PendingReply, error: String) -> Result<(), String> {
+    match reply {
+        PendingReply::Config(tx) => { let _ = tx.send(Err(error)); }
+        PendingReply::Mode(tx) => { let _ = tx.send(Err(error)); }
+        PendingReply::Flights(_, tx) => { let _ = tx.send(Err(error)); }
+        PendingReply::Flight(_, tx) => { let _ = tx.send(Err(error)); }
+        PendingReply::Drain(tx) => { let _ = tx.send(Err(error)); }
+    }
+    Ok(())
+}
+
+fn dispatch_usb_packet(app: &AppHandle, state: &TelemetryState, pending_reply: &mut Option<PendingReply>, pending_deadline: &mut Option<std::time::Instant>, packet: OutPacket) {
+    // If we're waiting for a reply, check if this packet satisfies it
+    if let Some(reply) = pending_reply.take() {
+        let mut should_keep_pending = false;
+
+        match reply {
+            PendingReply::Config(tx) => {
+                if let OutPacket::Config(cfg) = &packet {
+                    let _ = tx.send(Ok(cfg.clone()));
+                    *pending_deadline = None;
+                    return;
+                }
+                *pending_reply = Some(PendingReply::Config(tx));
+            }
+            PendingReply::Mode(tx) => {
+                if let OutPacket::Mode(mode) = &packet {
+                    let _ = tx.send(Ok(*mode));
+                    *pending_deadline = None;
+                    return;
+                }
+                *pending_reply = Some(PendingReply::Mode(tx));
+            }
+            PendingReply::Flights(data_tx, term_tx) => {
+                match &packet {
+                    OutPacket::FlightHeader(page) => {
+                        let _ = data_tx.send(Ok((page.index, page.data.clone())));
+                        *pending_reply = Some(PendingReply::Flights(data_tx, term_tx));
+                        return;
+                    }
+                    OutPacket::Ok | OutPacket::Null => {
+                        let _ = term_tx.send(Ok(()));
+                        *pending_deadline = None;
+                        return;
+                    }
+                    _ => {
+                        *pending_reply = Some(PendingReply::Flights(data_tx, term_tx));
+                    }
+                }
+            }
+            PendingReply::Flight(data_tx, term_tx) => {
+                match &packet {
+                    OutPacket::LogEntry(entry) => {
+                        let _ = data_tx.send(Ok(entry.clone()));
+                        *pending_reply = Some(PendingReply::Flight(data_tx, term_tx));
+                        return;
+                    }
+                    OutPacket::Ok | OutPacket::Null => {
+                        let _ = term_tx.send(Ok(()));
+                        *pending_deadline = None;
+                        return;
+                    }
+                    _ => {
+                        *pending_reply = Some(PendingReply::Flight(data_tx, term_tx));
+                    }
+                }
+            }
+            PendingReply::Drain(tx) => {
+                match &packet {
+                    OutPacket::Ok | OutPacket::Null => {
+                        let _ = tx.send(Ok(()));
+                        *pending_deadline = None;
+                        return;
+                    }
+                    _ => {
+                        *pending_reply = Some(PendingReply::Drain(tx));
+                    }
+                }
+            }
+        }
+    }
+
+    // No pending reply or packet didn't match: route to normal telemetry handling
+    let raw = serde_json::json!({
+        "id": 0,
+        "callsign": [],
+        "packet": serde_json::to_value(&packet).unwrap_or(Value::Null)
+    });
+    tauri::async_runtime::block_on(handle_packet(app, state, normalize_packet(TelemetrySource::Usb, raw, true)));
 }
 
 async fn run_replay_loop(app: AppHandle) {
@@ -1414,6 +1853,14 @@ pub fn run() {
             connect_usb,
             disconnect_usb,
             send_usb_command,
+            usb_reboot,
+            usb_query_config,
+            usb_set_config,
+            usb_query_mode,
+            usb_set_mode,
+            usb_query_flights,
+            usb_export_flight,
+            usb_erase_flash,
             get_demod_status,
             start_lora_demod,
             stop_lora_demod,

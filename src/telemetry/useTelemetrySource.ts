@@ -7,11 +7,14 @@ import type {
   LinkStatus,
   RecordingStatus,
   ReplayStatus,
+  SirinMode,
   SirinPacket,
   TelemetrySnapshot,
   TelemetrySource,
   TimelineState,
+  UsbConfigPayload,
   UsbDeviceInfo,
+  FlightSummary,
 } from "./types";
 
 const packetEventBySource = {
@@ -169,6 +172,14 @@ export function useTelemetrySource(source: TelemetrySource) {
   const connectUsb = async (deviceId: string) => invoke<string>("connect_usb", { deviceId });
   const disconnectUsb = async () => invoke<string>("disconnect_usb");
   const sendUsbCommand = async (command: string) => invoke<string>("send_usb_command", { request: { command } });
+  const usbReboot = async () => invoke<void>("usb_reboot");
+  const usbQueryConfig = async () => invoke<UsbConfigPayload>("usb_query_config");
+  const usbSetConfig = async (nickname: string, callsign: string, id: number) => invoke<UsbConfigPayload>("usb_set_config", { nickname, callsign, id });
+  const usbQueryMode = async () => invoke<string>("usb_query_mode");
+  const usbSetMode = async (mode: SirinMode) => invoke<string>("usb_set_mode", { modeStr: mode });
+  const usbQueryFlights = async () => invoke<FlightSummary[]>("usb_query_flights");
+  const usbExportFlight = async (index: number) => invoke<string>("usb_export_flight", { index });
+  const usbEraseFlash = async () => invoke<void>("usb_erase_flash");
   const getDemodStatus = async () => invoke<DemodStatus>("get_demod_status");
   const startLoraDemod = async () => invoke<DemodStatus>("start_lora_demod");
   const stopLoraDemod = async () => invoke<DemodStatus>("stop_lora_demod");
@@ -197,6 +208,14 @@ export function useTelemetrySource(source: TelemetrySource) {
       connectUsb,
       disconnectUsb,
       sendUsbCommand,
+      usbReboot,
+      usbQueryConfig,
+      usbSetConfig,
+      usbQueryMode,
+      usbSetMode,
+      usbQueryFlights,
+      usbExportFlight,
+      usbEraseFlash,
       getDemodStatus,
       startLoraDemod,
       stopLoraDemod,

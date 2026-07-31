@@ -3,6 +3,7 @@ export type AppPage = "home" | "overview" | "raw" | "replay" | "recovery" | "usb
 export type LinkState = "disconnected" | "connecting" | "connected" | "error";
 export type RecordingFormat = "csv" | "jsonl";
 export type TimelineStage = "standby" | "launch" | "burnout" | "apogee" | "drogue" | "main" | "landed";
+export type SirinMode = "standby" | "flight" | "landed";
 
 export type PacketFields = {
   flightMode: string | null;
@@ -119,6 +120,18 @@ export type UsbDeviceInfo = {
   address: number;
   isSirin: boolean;
   description: string;
+};
+
+export type UsbConfigPayload = {
+  nickname: string;
+  callsign: string;
+  id: number;
+};
+
+export type FlightSummary = {
+  index: number;
+  dateLabel: string;
+  timestampMs: number | null;
 };
 
 export type TelemetrySnapshot = {

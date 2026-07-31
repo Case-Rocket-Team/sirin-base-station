@@ -1,0 +1,13 @@
+{
+  "loraWebsocketUrl": "ws://localhost:8765",
+  "expectedPacketsPerSecond": 10.0,
+  "staleTimeoutMs": 3000,
+  "targetAltitudeFt": 30000.0,
+  "altitudeMinFt": 0.0,
+  "altitudeMaxFt": 40000.0,
+  "recordingDirectory": "recordings",
+  "defaultRecordingFormat": "csv",
+  "loraDemodPath": "lora_demod/sirin_demod.py",
+  "loraDemodHost": "127.0.0.1",
+  "loraDemodPort": 8765
+}
