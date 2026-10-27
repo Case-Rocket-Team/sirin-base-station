@@ -25,13 +25,13 @@ export default function App() {
   const activePageMeta = pages.find((page) => page.id === activePage);
 
   return (
-    <div className="h-screen bg-[radial-gradient(circle_at_top,rgba(57,132,255,0.24),transparent_32%),linear-gradient(180deg,#050814_0%,#09101b_48%,#05070e_100%)] text-slate-100 overflow-hidden">
+    <div className="h-screen bg-[radial-gradient(circle_at_top,rgba(57,132,255,0.24),transparent_32%),linear-gradient(180deg,#050814_0%,#09101b_48%,#05070e_100%)] text-slate-100 overflow-x-hidden overflow-y-scroll">
       <div className="app-viewport">
         {activePage === "home" ? (
           <HomePanel pages={pages} selectedSource={selectedSource} onPageChange={setActivePage} />
         ) : (
           <WindowShell title={activePageMeta?.label ?? "Window"} description={activePageMeta?.description ?? ""} onBack={() => setActivePage("home")} selectedSource={selectedSource} onSourceChange={setSelectedSource}>
-            <div className="app-window-content">
+            <div className="app-window-contentl">
               {activePage === "overview" && <TelemetryPanel selectedSource={selectedSource} />}
               {activePage === "raw" && <RawDataPanel selectedSource={selectedSource} />}
               {activePage === "replay" && <ReplayPanel />}

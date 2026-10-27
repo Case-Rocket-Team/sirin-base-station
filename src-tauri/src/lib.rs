@@ -180,6 +180,9 @@ struct PacketFields {
     expected_apogee_ft: Option<f64>,
     speed_mps: Option<f64>,
     accel_total_g: Option<f64>,
+    accel_x_g: Option<f64>,
+    accel_y_g: Option<f64>,
+    accel_z_g: Option<f64>,
     gps_satellite_count: Option<u64>,
     latitude_deg: Option<f64>,
     longitude_deg: Option<f64>,
@@ -1509,7 +1512,7 @@ fn write_packet_record(file: &mut File, format: RecordingFormat, packet: &SirinP
         }
         RecordingFormat::Csv => writeln!(
             file,
-            "{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{}",
+            "{},{},{},{},{},{},{},{},{},{}{},{},{},{},{},{},{},{},{},{},{}",
             packet.received_at_ms,
             format_source(packet.source),
             csv_cell(packet.callsign.as_deref()),
@@ -1518,6 +1521,9 @@ fn write_packet_record(file: &mut File, format: RecordingFormat, packet: &SirinP
             csv_number(packet.fields.expected_apogee_ft),
             csv_number(packet.fields.speed_mps),
             csv_number(packet.fields.accel_total_g),
+            csv_number(packet.fields.accel_x_g),
+            csv_number(packet.fields.accel_y_g),
+            csv_number(packet.fields.accel_z_g),
             csv_u64(packet.fields.gps_satellite_count),
             csv_number(packet.fields.latitude_deg),
             csv_number(packet.fields.longitude_deg),
@@ -1630,7 +1636,7 @@ fn extract_fields(raw: &Value) -> PacketFields {
         .and_then(|m| m.get("rot_quaternion"))
         .and_then(Value::as_object);
 
-    let accel_total_g = if is_data_state {
+    let accel = if is_data_state {
         // DataState carries no fused acceleration; use the raw IMU reading,
         // which is `Result`-wrapped (`{ "Ok": { x, y, z } }`) and in micro-Gs.
         state
@@ -1638,14 +1644,20 @@ fn extract_fields(raw: &Value) -> PacketFields {
             .and_then(|data| data.get("imu"))
             .and_then(|imu| imu.get("accel"))
             .and_then(|accel| accel.get("Ok"))
-            .and_then(vec3_magnitude)
-            .map(|micro_g| micro_g / MICRO_G_PER_G)
     } else {
         // State: `nominal.accel` is a fused vector in m/s^2.
         motion
             .and_then(|m| m.get("accel"))
-            .and_then(vec3_magnitude)
-            .map(|mps2| mps2 / GRAVITY_MPS2)
+    };
+
+    let accel_total_g = if is_data_state{
+        accel
+        .and_then(vec3_magnitude)
+        .map(|micro_g| micro_g / MICRO_G_PER_G)
+    } else {
+        accel
+        .and_then(vec3_magnitude)
+        .map(|mps2| mps2 / GRAVITY_MPS2)
     };
 
     PacketFields {
@@ -1654,6 +1666,9 @@ fn extract_fields(raw: &Value) -> PacketFields {
         expected_apogee_ft: obj_f64(state, "apogee").map(|m| m * METERS_TO_FEET),
         speed_mps: velocity.and_then(vec3_magnitude),
         accel_total_g,
+        accel_x_g: accel.and_then(|a| a.get("x")).and_then(Value::as_f64).map(|m| if is_data_state { m / MICRO_G_PER_G } else { m / GRAVITY_MPS2 }),
+        accel_y_g: accel.and_then(|a| a.get("y")).and_then(Value::as_f64).map(|m| if is_data_state { m / MICRO_G_PER_G } else { m / GRAVITY_MPS2 }),
+        accel_z_g: accel.and_then(|a| a.get("z")).and_then(Value::as_f64).map(|m| if is_data_state { m / MICRO_G_PER_G } else { m / GRAVITY_MPS2 }),
         gps_satellite_count: gps.and_then(|g| g.get("satellites")).and_then(Value::as_u64),
         latitude_deg: gps.and_then(|g| g.get("lat")).and_then(Value::as_f64),
         longitude_deg: gps.and_then(|g| g.get("lon")).and_then(Value::as_f64),
@@ -1730,12 +1745,15 @@ fn parse_csv_replay(content: &str) -> Vec<SirinPacket> {
                     altitude_agl_ft: parse_opt_f64(parts[4]),
                     expected_apogee_ft: parse_opt_f64(parts[5]),
                     speed_mps: parse_opt_f64(parts[6]),
-                    accel_total_g: parse_opt_f64(parts[7]),
-                    gps_satellite_count: parts[8].parse().ok(),
-                    latitude_deg: parse_opt_f64(parts[9]),
-                    longitude_deg: parse_opt_f64(parts[10]),
-                    position_x_m: parse_opt_f64(parts[11]),
-                    position_y_m: parse_opt_f64(parts[12]),
+                    accel_x_g: parse_opt_f64(parts[7]),
+                    accel_y_g: parse_opt_f64(parts[8]),
+                    accel_z_g: parse_opt_f64(parts[9]),
+                    accel_total_g: parse_opt_f64(parts[10]),
+                    gps_satellite_count: parts[11].parse().ok(),
+                    latitude_deg: parse_opt_f64(parts[12]),
+                    longitude_deg: parse_opt_f64(parts[13]),
+                    position_x_m: parse_opt_f64(parts[14]),
+                    position_y_m: parse_opt_f64(parts[15]),
                     position_z_m: parse_opt_f64(parts[13]),
                     quat_w: parse_opt_f64(parts[14]),
                     quat_x: parse_opt_f64(parts[15]),

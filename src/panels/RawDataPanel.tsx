@@ -42,7 +42,7 @@ export default function RawDataPanel({ selectedSource }: Props) {
   };
 
   return (
-    <div className="responsive-panel-grid responsive-panel-grid-raw">
+    <div className="responsive-panel-grid responsive-panel-grid-raw overflow-y-scroll">
       <TelemetryStatus
         source={selectedSource}
         status={telemetry.status}
