@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { LineChart } from "@mui/x-charts/LineChart";
 import TelemetryStatus from "./TelemetryStatus";
 import { useTelemetrySource } from "../telemetry/useTelemetrySource";
 import type { RecordingFormat, TelemetrySource } from "../telemetry/types";
@@ -7,15 +8,53 @@ type Props = {
   selectedSource: TelemetrySource;
 };
 
-export default function RawDataPanel({ selectedSource }: Props) {
+type HistoryPoint = {
+  time: string;
+  accelTotal: number;
+  speed:number;
+};
+
+export default function RawDataPanel({ selectedSource}: Props) {
   const telemetry = useTelemetrySource(selectedSource);
   const [filename, setFilename] = useState(`${selectedSource}-capture`);
   const [format, setFormat] = useState<RecordingFormat>("jsonl");
   const [commandError, setCommandError] = useState<string | null>(null);
 
+  const [history, setHistory] = useState<HistoryPoint[]>([]);
+
+  // Reset history when telemetry source changes
   useEffect(() => {
     setFilename(`${selectedSource}-capture`);
+    setHistory([]);
   }, [selectedSource]);
+
+  // Capture real-time telemetry packets for Total Acceleration
+  useEffect(() => {
+    if (!telemetry.packet) return;
+
+    const packetTime = telemetry.packet.timestamp ? new Date(telemetry.packet.timestamp) : new Date();
+    const formattedTime = `${packetTime.toLocaleTimeString([], {
+      minute: "2-digit",
+      second: "2-digit",
+    })}.${packetTime.getSeconds() < 10 ? "0" : ""}${packetTime.getMilliseconds().toString().padStart(3, "0")}`;
+
+    // Read Total Acceleration directly from packet fields
+    const fields = telemetry.packet.fields as Record<string, unknown> | undefined;
+    const rawValue = fields?.accelTotalG ?? fields?.accelTotal ?? fields?.accel_total ?? 0;
+    const parsedVal = typeof rawValue === "number" ? rawValue : parseFloat(String(rawValue)) || 0;
+
+    //Read Speed/Velocity
+    const rawSpeed = fields?.speedMps ?? fields?.speed_mps ?? fields?.speed ?? 0;
+    const parsedSpeed = typeof rawSpeed === "number" ? rawSpeed : parseFloat(String(rawSpeed)) || 0;
+    const newPoint: HistoryPoint = {
+      time: formattedTime,
+      accelTotal: parsedVal,
+      speed:parsedSpeed,
+    };
+
+    // Keep a rolling window of the last 50 points
+    setHistory((prev) => [...prev, newPoint]);
+  }, [telemetry.packet]);
 
   useEffect(() => {
     if (telemetry.snapshot?.config.defaultRecordingFormat) {
@@ -41,6 +80,20 @@ export default function RawDataPanel({ selectedSource }: Props) {
     }
   };
 
+  const xAxisData = history.length ? history.map((d) => d.time) : ["00:00"];
+  const accelTotalData = history.length ? history.map((d) => d.accelTotal) : [0];
+  const speedData = history.length ? history.map((d) => d.speed) : [0];
+
+  // Dynamic Y-axis limits for Velocity
+  const minSpeedY = history.length ? Math.min(...speedData) : 0;
+  const maxSpeedY = history.length ? Math.max(...speedData) : 10;
+  const speedPadding = Math.max((maxSpeedY - minSpeedY) * 0.2, 1);
+
+  // Dynamic Y-axis limits so minor fluctuations stand out
+  const minY = history.length ? Math.min(...accelTotalData) : 0;
+  const maxY = history.length ? Math.max(...accelTotalData) : 1.2;
+  const padding = Math.max((maxY - minY) * 0.2, 0.1);
+
   return (
     <div className="responsive-panel-grid responsive-panel-grid-raw overflow-y-scroll">
       <TelemetryStatus
@@ -51,7 +104,7 @@ export default function RawDataPanel({ selectedSource }: Props) {
         staleTimeoutMs={telemetry.snapshot?.config.staleTimeoutMs ?? 3000}
       />
 
-      <div className="rounded-lg border border-white/8 bg-black/25 p-2">
+      <div className="rounded-lg border border-white/8 bg-black/25">
         <div className="flex items-center justify-between gap-2">
           <p className="font-mono text-[10px] uppercase tracking-[0.35em] text-cyan-200/75">
             Telemetry Data
@@ -185,6 +238,162 @@ export default function RawDataPanel({ selectedSource }: Props) {
           {telemetry.recordingStatus?.path?.split(/[/\\]/).pop() ?? "None"}
         </p>
       </div>
+
+      {/* Total Acceleration Responsive Chart */}
+      <div className="rounded-lg border border-white/8 bg-black/25 p-2 w-full overflow-hidden">
+        <div className="flex items-center justify-between mb-1">
+          <p className="font-mono text-[10px] uppercase tracking-[0.35em] text-cyan-200/75">
+            Total Acceleration vs Time
+          </p>
+          <span className="font-mono text-[9px] text-cyan-300 bg-cyan-950/40 px-1.5 py-0.5 rounded border border-cyan-800/40">
+            Live: {accelTotalData[accelTotalData.length - 1]?.toFixed(2)} g | Pts: {history.length}
+          </span>
+        </div>
+
+        <div className="w-full h-[260px] relative">
+          <LineChart
+            key={`total-chart-${history.length}-${telemetry.packet?.sequence ?? 0}`}
+            height={260}
+            skipAnimation
+            series={[
+              {
+                data: accelTotalData,
+                label: "Total Accel (g)",
+                color: "#38bdf8", // Cyan accent line
+                showMark: false,
+              },
+            ]}
+            xAxis={[
+              {
+                scaleType: "point",
+                data: xAxisData,
+                label: "Time",
+                tickLabelStyle: { fill: "#94a3b8", fontSize: 9 },
+              },
+            ]}
+            yAxis={[
+              {
+                width: 50,
+                label: "Total Accel (g)",
+                min: minY - padding,
+                max: maxY + padding,
+                valueFormatter: (value) => `${Number(value).toFixed(2)} g`,
+                tickLabelStyle: { fill: "#fefefe", fontSize: 9 },
+              },
+            ]}
+            margin={{ top: 35, right: 20, bottom: 40, left: 75 }}
+            grid={{ horizontal: true }}
+            slotProps={{
+              legend: {
+                hidden: false,
+                labelStyle: { fill: "#cbd5e1", fontSize: 10 },
+              },
+            }}
+            sx={{
+              width: "100%",
+              "& .MuiChartsLegend-root, & .MuiChartsLegend-root text, & .MuiChartsLegend-root tspan, & .MuiChartsLegend-label": {
+                fill: "#f8fafc !important",
+                color: "#f8fafc !important",
+                fontSize: "10px !important",
+              },
+              "& .MuiChartsAxis-line, & .MuiChartsAxis-tick": {
+                stroke: "rgba(255, 255, 255, 0.4) !important",
+              },
+              "& .MuiChartsAxis-label": {
+                fill: "#94a3b8 !important",
+                fontSize: "10px",
+              },
+              "& .MuiChartsLegend-root text": {
+                fill: "#cbd5e1 !important",
+                fontSize: "10px !important",
+              },
+              "& .MuiChartsGrid-line": {
+                stroke: "rgba(255, 255, 255, 0.05)",
+                strokeDasharray: "3 3",
+              },
+            }}
+          />
+        </div>
+        <pre className="mt-1 text-[9px] text-slate-200 overflow-auto max-h-24">
+          {JSON.stringify(telemetry.rawData, null, 2)}
+        </pre>
+      </div>
+
+      <div className="rounded-lg border border-white/8 bg-black/25 p-2 w-full overflow-hidden">
+        <div className="flex items-center justify-between mb-1"></div>
+        <p className="font-mono text-[10px] uppercase tracking-[0.35em] text-cyan-200/75">
+            Velocity vs Time
+        </p>
+        <span className="font-mono text-[9px] text-cyan-300 bg-cyan-950/40 px-1.5 py-0.5 rounded border border-cyan-800/40">
+            Live: {speedData[speedData.length - 1]?.toFixed(1)} m/s | Pts: {history.length}
+        </span>
+        <div className="w-full h-[260px] relative">
+          <LineChart
+            key={`velocity-chart-${history.length}-${telemetry.packet?.sequence ?? 0}`}
+            height={260}
+            skipAnimation
+            series={[
+              {
+                data: speedData,
+                label: "Speed (m/s)",
+                color: "#34d399", // Emerald green accent
+                showMark: false,
+              },
+            ]}
+            xAxis={[
+              {
+                scaleType: "point",
+                data: xAxisData,
+                label: "Time",
+                tickLabelStyle: { fill: "#94a3b8", fontSize: 9 },
+              },
+            ]}
+            yAxis={[
+              {
+                width: 50,
+                label: "Speed (m/s)",
+                min: minSpeedY - speedPadding,
+                max: maxSpeedY + speedPadding,
+                valueFormatter: (value) => `${Number(value).toFixed(1)} m/s`,
+                tickLabelStyle: { fill: "#fefefe", fontSize: 9 },
+              },
+            ]}
+            margin={{ top: 35, right: 20, bottom: 40, left: 75 }}
+            grid={{ horizontal: true }}
+            slotProps={{
+              legend: {
+                hidden: false,
+                labelStyle: { fill: "#cbd5e1", fontSize: 10 },
+              },
+            }}
+            sx={{
+              width: "100%",
+              "& .MuiChartsLegend-root, & .MuiChartsLegend-root text, & .MuiChartsLegend-root tspan, & .MuiChartsLegend-label": {
+                fill: "#f8fafc !important",
+                color: "#f8fafc !important",
+                fontSize: "10px !important",
+              },
+              "& .MuiChartsAxis-line, & .MuiChartsAxis-tick": {
+                stroke: "rgba(255, 255, 255, 0.15)",
+              },
+              "& .MuiChartsAxis-label": {
+                fill: "#94a3b8",
+                fontSize: "10px",
+              },
+              "& .MuiChartsLegend-root text": {
+                fill: "#cbd5e1 !important",
+                fontSize: "10px !important",
+              },
+              "& .MuiChartsGrid-line": {
+                stroke: "rgba(255, 255, 255, 0.05)",
+                strokeDasharray: "3 3",
+              },
+            }}
+          />
+        </div>
+      </div>
+
+      
     </div>
   );
 }
@@ -214,4 +423,3 @@ function formatValue(value: number | null | undefined, unit: string, decimals: n
   }
   return `${Math.round(value)} ${unit}`;
 }
-
