@@ -953,7 +953,7 @@ async fn start_recording(state: State<'_, TelemetryState>, request: StartRecordi
     if matches!(request.format, RecordingFormat::Csv) {
         writeln!(
             file,
-            "received_at_ms,source,callsign,flight_mode,altitude_agl_ft,expected_apogee_ft,speed_mps,accel_total_g,gps_satellite_count,latitude_deg,longitude_deg,position_x_m,position_y_m,position_z_m,quat_w,quat_x,quat_y,quat_z"
+            "received_at_ms,source,callsign,flight_mode,altitude_agl_ft,expected_apogee_ft,speed_mps,accel_total_g,accel_x_g,accel_y_g,accel_z_g,gps_satellite_count,latitude_deg,longitude_deg,position_x_m,position_y_m,position_z_m,quat_w,quat_x,quat_y,quat_z"
         )
         .map_err(|err| err.to_string())?;
     }
@@ -1745,20 +1745,20 @@ fn parse_csv_replay(content: &str) -> Vec<SirinPacket> {
                     altitude_agl_ft: parse_opt_f64(parts[4]),
                     expected_apogee_ft: parse_opt_f64(parts[5]),
                     speed_mps: parse_opt_f64(parts[6]),
-                    accel_x_g: parse_opt_f64(parts[7]),
-                    accel_y_g: parse_opt_f64(parts[8]),
-                    accel_z_g: parse_opt_f64(parts[9]),
-                    accel_total_g: parse_opt_f64(parts[10]),
+                    accel_total_g: parse_opt_f64(parts[7]),
+                    accel_x_g: parse_opt_f64(parts[8]),
+                    accel_y_g: parse_opt_f64(parts[9]),
+                    accel_z_g: parse_opt_f64(parts[10]),
                     gps_satellite_count: parts[11].parse().ok(),
                     latitude_deg: parse_opt_f64(parts[12]),
                     longitude_deg: parse_opt_f64(parts[13]),
                     position_x_m: parse_opt_f64(parts[14]),
                     position_y_m: parse_opt_f64(parts[15]),
-                    position_z_m: parse_opt_f64(parts[13]),
-                    quat_w: parse_opt_f64(parts[14]),
-                    quat_x: parse_opt_f64(parts[15]),
-                    quat_y: parse_opt_f64(parts[16]),
-                    quat_z: parse_opt_f64(parts[17]),
+                    position_z_m: parse_opt_f64(parts[16]),
+                    quat_w: parse_opt_f64(parts[17]),
+                    quat_x: parse_opt_f64(parts[18]),
+                    quat_y: parse_opt_f64(parts[19]),
+                    quat_z: parse_opt_f64(parts[20]),
                 },
             })
         })
@@ -1972,6 +1972,9 @@ mod tests {
         approx(f.expected_apogee_ft, 250.0 * METERS_TO_FEET);
         approx(f.speed_mps, 5.0); // |(3,4,0)|
         approx(f.accel_total_g, 1.0); // 1_000_000 micro-Gs
+        approx(f.accel_x_g, 1.0);
+        approx(f.accel_y_g, 0.0);
+        approx(f.accel_z_g, 0.0);       
         assert_eq!(f.gps_satellite_count, Some(7));
         approx(f.latitude_deg, 42.5);
         approx(f.longitude_deg, -71.0);
@@ -2010,6 +2013,9 @@ mod tests {
         assert_eq!(f.expected_apogee_ft, None);
         approx(f.speed_mps, 6.0);
         approx(f.accel_total_g, 1.0); // one g in m/s^2
+        approx(f.accel_x_g, 1.0);
+        approx(f.accel_y_g, 0.0);
+        approx(f.accel_z_g, 0.0);   
         assert_eq!(f.gps_satellite_count, Some(5));
         approx(f.position_x_m, 7.0); // from nominal, not gps_fix
         approx(f.quat_x, 1.0);
