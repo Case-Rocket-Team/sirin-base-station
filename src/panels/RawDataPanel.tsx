@@ -136,7 +136,7 @@ export default function RawDataPanel({ selectedSource }: Props) {
   const sharedYAxisWidth = 65;
 
   return (
-    <div className="w-full h-full max-h-screen overflow-y-auto min-h-0 space-y-6 p-3 pb-24">
+    <div className="w-full space-y-6 p-3">
       {/* Upper Telemetry Grid */}
       <div className="responsive-panel-grid responsive-panel-grid-raw">
         <TelemetryStatus
@@ -283,7 +283,7 @@ export default function RawDataPanel({ selectedSource }: Props) {
         </div>
       </div>
 
-      {/* Full Width Stacked Charts (Long Vertical Scrollable Stack) */}
+      {/* Full Width Stacked Charts */}
       <div className="flex flex-col gap-6 w-full">
         {/* 1. Total Acceleration Chart */}
         <div className="w-full min-w-0 rounded-lg border border-white/8 bg-black/25 p-3 overflow-hidden">
