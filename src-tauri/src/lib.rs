@@ -1512,7 +1512,7 @@ fn write_packet_record(file: &mut File, format: RecordingFormat, packet: &SirinP
         }
         RecordingFormat::Csv => writeln!(
             file,
-            "{},{},{},{},{},{},{},{},{},{}{},{},{},{},{},{},{},{},{},{},{}",
+            "{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{}",
             packet.received_at_ms,
             format_source(packet.source),
             csv_cell(packet.callsign.as_deref()),
@@ -1730,7 +1730,7 @@ fn parse_csv_replay(content: &str) -> Vec<SirinPacket> {
         .skip(1)
         .filter_map(|line| {
             let parts: Vec<&str> = line.split(',').collect();
-            if parts.len() < 18 {
+            if parts.len() < 21 {
                 return None;
             }
             Some(SirinPacket {
