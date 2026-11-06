@@ -4,7 +4,7 @@ SDRplay RSP1a (or upstream ZMQ) -> [LoRa demod -> websocket broadcast] + [2x ZMQ
 Cross-platform: works on Linux, macOS, and Windows.
 """
 
-from gnuradio import gr, blocks, soapy ##, zeromq
+from gnuradio import gr, blocks, soapy, zeromq
 import gnuradio.lora_sdr as lora_sdr
 from websockets.asyncio.server import serve, broadcast
 import argparse

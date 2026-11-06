@@ -1,0 +1,2 @@
+# Files the app writes at runtime; changes here must not trigger a dev rebuild/restart.
+recordings/

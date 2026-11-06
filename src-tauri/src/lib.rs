@@ -63,7 +63,17 @@ const DEFAULT_ALTITUDE_MAX_FT: f64 = 40_000.0;
 const DEFAULT_TARGET_ALTITUDE_FT: f64 = 30_000.0;
 const DEFAULT_RECORDING_FORMAT: RecordingFormat = RecordingFormat::Jsonl;
 const CONFIG_FILE_NAME: &str = "base-station-config.json";
-const SIRIN_DEMOD_RELATIVE_PATH: &str = "lora_demod/sirin_demod.py";
+const SIRIN_DEMOD_RELATIVE_PATH: &str = "radio_demod/all_demod/sirin_demod.py";
+const DEFAULT_LORA_DEMOD_GAIN: f64 = 30.0;
+const DEFAULT_LORA_DEMOD_FREQ: f64 = 429.86e6;
+
+fn default_lora_demod_gain() -> f64 {
+    DEFAULT_LORA_DEMOD_GAIN
+}
+
+fn default_lora_demod_freq() -> f64 {
+    DEFAULT_LORA_DEMOD_FREQ
+}
 
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -79,6 +89,10 @@ struct AppConfig {
     lora_demod_path: String,
     lora_demod_host: String,
     lora_demod_port: u16,
+    #[serde(default = "default_lora_demod_gain")]
+    lora_demod_gain: f64,
+    #[serde(default = "default_lora_demod_freq")]
+    lora_demod_freq: f64,
 }
 
 impl Default for AppConfig {
@@ -95,6 +109,8 @@ impl Default for AppConfig {
             lora_demod_path: SIRIN_DEMOD_RELATIVE_PATH.to_string(),
             lora_demod_host: "127.0.0.1".to_string(),
             lora_demod_port: 8765,
+            lora_demod_gain: DEFAULT_LORA_DEMOD_GAIN,
+            lora_demod_freq: DEFAULT_LORA_DEMOD_FREQ,
         }
     }
 }
@@ -816,25 +832,84 @@ async fn start_lora_demod(app: AppHandle, state: State<'_, TelemetryState>) -> R
         return Err(demod.status.last_error.clone().unwrap_or_default());
     }
 
-    let mut command = Command::new("python");
-    command
-        .arg(script_path)
-        .arg("--host")
-        .arg(&config.lora_demod_host)
-        .arg("--port")
-        .arg(config.lora_demod_port.to_string())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null());
+    // Get the directory containing the script
+    let script_dir = if let Ok(canonical) = script_path.canonicalize() {
+        canonical.parent().unwrap_or_else(|| std::path::Path::new(".")).to_path_buf()
+    } else {
+        script_path.parent().unwrap_or_else(|| std::path::Path::new(".")).to_path_buf()
+    };
+
+    // Look for run_demod.sh in the script directory for conda activation
+    let run_script = script_dir.join("run_demod.sh");
+    let use_bash = run_script.exists();
+
+    let mut command = if use_bash {
+        Command::new("bash")
+    } else {
+        Command::new("python3")
+    };
+
+    if use_bash {
+        command
+            .arg(&run_script)
+            .arg("--host")
+            .arg(&config.lora_demod_host)
+            .arg("--port")
+            .arg(config.lora_demod_port.to_string())
+            .arg("--gain")
+            .arg(config.lora_demod_gain.to_string())
+            .arg("--center-freq")
+            .arg(config.lora_demod_freq.to_string());
+    } else {
+        command
+            .arg(&script_path)
+            .arg("--host")
+            .arg(&config.lora_demod_host)
+            .arg("--port")
+            .arg(config.lora_demod_port.to_string())
+            .arg("--gain")
+            .arg(config.lora_demod_gain.to_string())
+            .arg("--center-freq")
+            .arg(config.lora_demod_freq.to_string());
+    }
+
+    command.current_dir(&script_dir);
+
+    // Create a log file for demod output
+    let log_file = script_dir.join("demod.log");
+    if let Ok(log_handle) = File::create(&log_file) {
+        command.stdout(log_handle);
+    } else {
+        command.stdout(Stdio::null());
+    }
+    command.stderr(Stdio::piped());
 
     match command.spawn() {
-        Ok(child) => {
+        Ok(mut child) => {
+            // Read stderr in background to capture errors to log
+            if let Some(mut stderr) = child.stderr.take() {
+                let log_path = log_file.clone();
+                std::thread::spawn(move || {
+                    use std::io::Read;
+                    let mut buf = [0; 1024];
+                    if let Ok(mut log_file) = File::create(log_path) {
+                        while let Ok(n) = stderr.read(&mut buf) {
+                            if n == 0 {
+                                break;
+                            }
+                            let _ = log_file.write_all(&buf[..n]);
+                        }
+                    }
+                });
+            }
+
             demod.child = Some(child);
             demod.status.running = true;
             demod.status.last_error = None;
         }
         Err(err) => {
             demod.status.running = false;
-            demod.status.last_error = Some(err.to_string());
+            demod.status.last_error = Some(format!("Failed to spawn demod process: {}", err));
         }
     }
     let _ = app.emit(DEMOD_STATUS_EVENT, &demod.status);

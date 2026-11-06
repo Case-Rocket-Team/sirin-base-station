@@ -7,7 +7,9 @@
   "altitudeMaxFt": 40000.0,
   "recordingDirectory": "recordings",
   "defaultRecordingFormat": "csv",
-  "loraDemodPath": "lora_demod/sirin_demod.py",
+  "loraDemodPath": "radio_demod/all_demod/sirin_demod.py",
   "loraDemodHost": "127.0.0.1",
-  "loraDemodPort": 8765
+  "loraDemodPort": 8765,
+  "loraDemodGain": 30,
+  "loraDemodFreq": 429.86e6
 }
