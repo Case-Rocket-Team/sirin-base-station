@@ -1,7 +1,6 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import TelemetryPanel from "./TelemetryPanel";
 import RawDataPanel from "./RawDataPanel";
-import { useTelemetrySource } from "../telemetry/useTelemetrySource";
 import type { TelemetrySource } from "../telemetry/types";
 
 type DisplayMode = "overview" | "raw";
@@ -12,7 +11,6 @@ type Props = {
 
 export default function RecordingPanel({ selectedSource }: Props) {
   const [displayMode, setDisplayMode] = useState<DisplayMode>("overview");
-  const telemetry = useTelemetrySource(selectedSource);
 
   return (
     <div className="flex flex-col h-full gap-2">

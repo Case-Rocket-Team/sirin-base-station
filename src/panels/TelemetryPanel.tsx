@@ -5,13 +5,11 @@ import TelemetryStatus from "./TelemetryStatus";
 import ThreeDPosition from "./3DPosition";
 import TimelineBar from "./TimelineBar";
 import { useTelemetrySource } from "../telemetry/useTelemetrySource";
-import type { TelemetrySource, TimelineStage } from "../telemetry/types";
+import type { TelemetrySource } from "../telemetry/types";
 
 type Props = {
   selectedSource: TelemetrySource;
 };
-
-const orderedStages: TimelineStage[] = ["standby", "launch", "burnout", "apogee", "drogue", "main", "landed"];
 
 export default function TelemetryPanel({ selectedSource }: Props) {
   const telemetry = useTelemetrySource(selectedSource);

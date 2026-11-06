@@ -707,9 +707,9 @@ async fn usb_export_flight(state: State<'_, TelemetryState>, index: u16) -> Resu
                         let baro_pressure = datastate.data.baro.pressure.as_ref().ok().map(|p| p.value);
                         let baro_temp = datastate.data.baro.temperature.as_ref().ok().map(|t| t.value);
 
-                        writeln!(file, "{},{},{},{:?},{:?},{:?},{:?},{:?},{:?},{:?},{:?},{:?},{:?},{:?},{:?},{:?},{:?},{:?},{:?},{:?},{:?},{:?},{:?},{:?},{:?},{:?},{:?},{:?},{:?},{:?}",
+                        writeln!(file, "{},{},{:?},{:?},{:?},{:?},{:?},{:?},{:?},{:?},{:?},{:?},{:?},{:?},{:?},{:?},{:?},{:?},{:?},{:?},{:?},{:?},{:?},{:?},{:?},{:?},{:?},{:?},{:?}",
                             datastate.data.time.value,
-                            datastate.mode,
+                            //datastate.mode,
                             datastate.data.altitude.value,
                             datastate.altitude.value,
                             datastate.apogee.map(|a| a.value),
@@ -1031,16 +1031,42 @@ fn load_config_from_disk() -> AppConfig {
 }
 
 fn workspace_config_path() -> PathBuf {
-    PathBuf::from(CONFIG_FILE_NAME)
+    // Try current directory first
+    let relative = PathBuf::from(CONFIG_FILE_NAME);
+    if relative.exists() {
+        return relative;
+    }
+
+    // Try parent directory (in case we're in src-tauri)
+    let parent_relative = PathBuf::from("..").join(CONFIG_FILE_NAME);
+    if parent_relative.exists() {
+        return parent_relative;
+    }
+
+    // Fall back to relative path
+    relative
 }
 
 fn resolve_workspace_path(path: &str) -> PathBuf {
     let candidate = PathBuf::from(path);
     if candidate.is_absolute() {
-        candidate
-    } else {
-        PathBuf::from(".").join(candidate)
+        return candidate;
     }
+
+    // Try relative to current directory first
+    let relative = PathBuf::from(".").join(&candidate);
+    if relative.exists() {
+        return relative;
+    }
+
+    // Try relative to parent directory (in case we're in src-tauri)
+    let parent_relative = PathBuf::from("..").join(&candidate);
+    if parent_relative.exists() {
+        return parent_relative;
+    }
+
+    // Fall back to original relative path
+    relative
 }
 
 fn send_usb_control_packet(packet: InPacket) -> Result<(), String> {

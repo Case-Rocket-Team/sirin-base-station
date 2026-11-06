@@ -34,11 +34,11 @@ export default function RawDataPanel({ selectedSource }: Props) {
   useEffect(() => {
     if (!telemetry.packet) return;
 
-    const packetTime = telemetry.packet.timestamp ? new Date(telemetry.packet.timestamp) : new Date();
+    const packetTime = telemetry.packet.receivedAtMs ? new Date(telemetry.packet.receivedAtMs) : new Date();
     const formattedTime = `${packetTime.toLocaleTimeString([], {
       minute: "2-digit",
       second: "2-digit",
-    })}.${packetTime.getSeconds() < 10 ? "0" : ""}${packetTime.getMilliseconds().toString().padStart(3, "0")}`;
+    })}.${packetTime.getMilliseconds().toString().padStart(3, "0")}`;
 
     const fields = telemetry.packet.fields as Record<string, unknown> | undefined;
 
@@ -313,8 +313,8 @@ export default function RawDataPanel({ selectedSource }: Props) {
                   scaleType: "point",
                   data: xAxisIndices,
                   label: "Time",
-                  valueFormatter: (idx) => history[Number(idx)]?.time.split(".")[0] ?? "",
-                  tickInterval: (_, index) => index % Math.ceil((history.length || 1) / 10) === 0,
+                  valueFormatter: (idx: string | number) => history[Number(idx)]?.time.split(".")[0] ?? "",
+                  tickInterval: (_: unknown, index: number) => index % Math.ceil((history.length || 1) / 10) === 0,
                   tickLabelStyle: { fill: "#94a3b8", fontSize: 10 },
                 },
               ]}
@@ -324,17 +324,14 @@ export default function RawDataPanel({ selectedSource }: Props) {
                   label: "Total Accel (g)",
                   min: minY - padding,
                   max: maxY + padding,
-                  valueFormatter: (value) => `${Number(value).toFixed(2)} g`,
+                  valueFormatter: (value: number) => `${Number(value).toFixed(2)} g`,
                   tickLabelStyle: { fill: "#fefefe", fontSize: 10 },
                 },
               ]}
               margin={sharedMargin}
               grid={{ horizontal: true }}
               slotProps={{
-                legend: {
-                  hidden: false,
-                  labelStyle: { fill: "#cbd5e1", fontSize: 10 },
-                },
+                legend: {},
               }}
               sx={{
                 width: "100%",
@@ -387,8 +384,8 @@ export default function RawDataPanel({ selectedSource }: Props) {
                   scaleType: "point",
                   data: xAxisIndices,
                   label: "Time",
-                  valueFormatter: (idx) => history[Number(idx)]?.time.split(".")[0] ?? "",
-                  tickInterval: (_, index) => index % Math.ceil((history.length || 1) / 10) === 0,
+                  valueFormatter: (idx: string | number) => history[Number(idx)]?.time.split(".")[0] ?? "",
+                  tickInterval: (_: unknown, index: number) => index % Math.ceil((history.length || 1) / 10) === 0,
                   tickLabelStyle: { fill: "#94a3b8", fontSize: 10 },
                 },
               ]}
@@ -398,17 +395,14 @@ export default function RawDataPanel({ selectedSource }: Props) {
                   label: "Speed (m/s)",
                   min: minSpeedY - speedPadding,
                   max: maxSpeedY + speedPadding,
-                  valueFormatter: (value) => `${Number(value).toFixed(1)} m/s`,
+                  valueFormatter: (value: number) => `${Number(value).toFixed(1)} m/s`,
                   tickLabelStyle: { fill: "#fefefe", fontSize: 10 },
                 },
               ]}
               margin={sharedMargin}
               grid={{ horizontal: true }}
               slotProps={{
-                legend: {
-                  hidden: false,
-                  labelStyle: { fill: "#cbd5e1", fontSize: 10 },
-                },
+                legend: {},
               }}
               sx={{
                 width: "100%",
@@ -461,8 +455,8 @@ export default function RawDataPanel({ selectedSource }: Props) {
                   scaleType: "point",
                   data: xAxisIndices,
                   label: "Time",
-                  valueFormatter: (idx) => history[Number(idx)]?.time.split(".")[0] ?? "",
-                  tickInterval: (_, index) => index % Math.ceil((history.length || 1) / 10) === 0,
+                  valueFormatter: (idx: string | number) => history[Number(idx)]?.time.split(".")[0] ?? "",
+                  tickInterval: (_: unknown, index: number) => index % Math.ceil((history.length || 1) / 10) === 0,
                   tickLabelStyle: { fill: "#94a3b8", fontSize: 10 },
                 },
               ]}
@@ -472,17 +466,14 @@ export default function RawDataPanel({ selectedSource }: Props) {
                   label: "Altitude (ft)",
                   min: minAltY - altPadding,
                   max: maxAltY + altPadding,
-                  valueFormatter: (value) => `${Number(value).toFixed(0)} ft`,
+                  valueFormatter: (value: number) => `${Number(value).toFixed(0)} ft`,
                   tickLabelStyle: { fill: "#fefefe", fontSize: 10 },
                 },
               ]}
               margin={sharedMargin}
               grid={{ horizontal: true }}
               slotProps={{
-                legend: {
-                  hidden: false,
-                  labelStyle: { fill: "#cbd5e1", fontSize: 10 },
-                },
+                legend: {},
               }}
               sx={{
                 width: "100%",
