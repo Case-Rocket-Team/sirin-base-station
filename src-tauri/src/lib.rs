@@ -919,10 +919,10 @@ async fn start_lora_demod(app: AppHandle, state: State<'_, TelemetryState>) -> R
 #[tauri::command]
 async fn stop_lora_demod(app: AppHandle, state: State<'_, TelemetryState>) -> Result<DemodStatus, String> {
     let mut demod = state.demod.lock().await;
-    if let Some(child) = demod.child.as_mut() {
+    if let Some(mut child) = demod.child.take() {
         let _ = child.kill();
+        let _ = child.wait(); // reap it so it doesn't linger as a zombie
     }
-    demod.child = None;
     demod.status.running = false;
     let _ = app.emit(DEMOD_STATUS_EVENT, &demod.status);
     Ok(demod.status.clone())
@@ -1994,8 +1994,19 @@ pub fn run() {
             stop_replay
         ])
         .plugin(tauri_plugin_opener::init())
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app, event| {
+            if let tauri::RunEvent::Exit = event {
+                // Stop the demod so it doesn't outlive the app and keep holding its ports.
+                let state = app.state::<TelemetryState>();
+                let mut demod = state.demod.blocking_lock();
+                if let Some(mut child) = demod.child.take() {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                }
+            }
+        });
 }
 
 #[cfg(test)]
