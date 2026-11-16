@@ -11,7 +11,14 @@ type Props = {
 };
 
 export default function RocketOrientation({ quatW, quatX, quatY, quatZ }: Props) {
-  const quaternion = useMemo(() => normalizeQuaternion(quatW, quatX, quatY, quatZ), [quatW, quatX, quatY, quatZ]);
+  const incoming = useMemo(() => normalizeQuaternion(quatW, quatX, quatY, quatZ), [quatW, quatX, quatY, quatZ]);
+  // Packets without a usable quaternion (Ok/Mode replies, all-zero quaternions)
+  // keep the last good orientation instead of unmounting the whole 3D scene.
+  const lastValid = useRef<THREE.Quaternion | null>(null);
+  if (incoming) {
+    lastValid.current = incoming;
+  }
+  const quaternion = lastValid.current;
 
   if (!quaternion) {
     return <EmptyOrientationState message="Waiting for valid quaternion telemetry." />;
@@ -53,14 +60,18 @@ function DoubleSidedGrid({ position, rotation }: { position: [number, number, nu
 function RocketModel({ quaternion }: { quaternion: THREE.Quaternion }) {
   const ref = useRef<THREE.Group>(null);
   const { scene } = useGLTF("/models/Aurora.glb");
+  // Clone once: cloning on every render swapped in a fresh, un-rotated model
+  // each packet, so it snapped back and re-slerped every time.
+  const model = useMemo(() => scene.clone(), [scene]);
 
   useFrame(() => {
     if (ref.current) {
-      ref.current.quaternion.slerp(quaternion, 0.2);
+      // Show the received quaternion as-is (no smoothing).
+      ref.current.quaternion.copy(quaternion);
     }
   });
 
-  return <primitive ref={ref} object={scene.clone()} scale={0.45} position={[0.5, 0.3, 0.5]} />;
+  return <primitive ref={ref} object={model} scale={0.45} position={[0.5, 0.3, 0.5]} />;
 }
 
 function normalizeQuaternion(

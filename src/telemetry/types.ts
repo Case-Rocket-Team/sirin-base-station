@@ -17,13 +17,25 @@ export type PacketFields = {
   gyroXDps: number | null;
   gyroYDps: number | null;
   gyroZDps: number | null;
-  magXMt: number | null;
-  magYMt: number | null;
-  magZMt: number | null;
+  /** Magnetometer counts as sent by the firmware (no unit scale defined). */
+  magXRaw: number | null;
+  magYRaw: number | null;
+  magZRaw: number | null;
+  /** High-G IMU counts as sent by the firmware (no unit scale defined). */
+  highGXRaw: number | null;
+  highGYRaw: number | null;
+  highGZRaw: number | null;
   velocityXMps: number | null;
   velocityYMps: number | null;
   velocityZMps: number | null;
   barometricPressurePa: number | null;
+  baroTemperatureC: number | null;
+  /** Barometric altitude from the sensor data (`data.altitude`), meters. */
+  baroAltitudeM: number | null;
+  sirinTimeMs: number | null;
+  gpsFixType: string | null;
+  apoVoltageV: number | null;
+  mainVoltageV: number | null;
   gpsSatelliteCount: number | null;
   latitudeDeg: number | null;
   longitudeDeg: number | null;

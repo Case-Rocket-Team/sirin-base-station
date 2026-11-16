@@ -209,6 +209,48 @@ struct PacketFields {
     quat_x: Option<f64>,
     quat_y: Option<f64>,
     quat_z: Option<f64>,
+    // Raw sensor readings (DataState packets only). Defaulted so older JSONL recordings still load.
+    #[serde(default)]
+    sirin_time_ms: Option<f64>,
+    #[serde(default)]
+    gyro_x_dps: Option<f64>,
+    #[serde(default)]
+    gyro_y_dps: Option<f64>,
+    #[serde(default)]
+    gyro_z_dps: Option<f64>,
+    /// Magnetometer counts as sent by the firmware (no unit scale is defined for them).
+    #[serde(default)]
+    mag_x_raw: Option<f64>,
+    #[serde(default)]
+    mag_y_raw: Option<f64>,
+    #[serde(default)]
+    mag_z_raw: Option<f64>,
+    /// High-G IMU counts as sent by the firmware (no unit scale is defined for them).
+    #[serde(default)]
+    high_g_x_raw: Option<f64>,
+    #[serde(default)]
+    high_g_y_raw: Option<f64>,
+    #[serde(default)]
+    high_g_z_raw: Option<f64>,
+    #[serde(default)]
+    velocity_x_mps: Option<f64>,
+    #[serde(default)]
+    velocity_y_mps: Option<f64>,
+    #[serde(default)]
+    velocity_z_mps: Option<f64>,
+    #[serde(default)]
+    barometric_pressure_pa: Option<f64>,
+    #[serde(default)]
+    baro_temperature_c: Option<f64>,
+    /// Barometric altitude from the sensor data (`data.altitude`), in meters.
+    #[serde(default)]
+    baro_altitude_m: Option<f64>,
+    #[serde(default)]
+    gps_fix_type: Option<String>,
+    #[serde(default)]
+    apo_voltage_v: Option<f64>,
+    #[serde(default)]
+    main_voltage_v: Option<f64>,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -1689,6 +1731,7 @@ fn detect_usb_device() -> Result<bool, String> {
 }
 
 const METERS_TO_FEET: f64 = 3.280_839_895;
+const MICRODEGREES_PER_DEGREE: f64 = 1_000_000.0;
 const GRAVITY_MPS2: f64 = 9.806_65;
 const MICRO_G_PER_G: f64 = 1_000_000.0;
 
@@ -1761,7 +1804,40 @@ fn extract_fields(raw: &Value) -> PacketFields {
         .map(|mps2| mps2 / GRAVITY_MPS2)
     };
 
+    // Raw sensor block (`SirinData`), only present on DataState packets. Sensor readings are
+    // `Result`-wrapped, so `{ "Ok": value }` on success and `{ "Err": ... }` on failure.
+    let data = if is_data_state { state.get("data") } else { None };
+    let sensor_ok = |sensor: &str, reading: &str| {
+        data.and_then(|d| d.get(sensor))
+            .and_then(|s| s.get(reading))
+            .and_then(|r| r.get("Ok"))
+    };
+    let gyro = sensor_ok("imu", "angular_vel");
+    let mag = sensor_ok("magnetometer", "mag");
+    let high_g = sensor_ok("high_g_imu", "accel");
+    let voltage = state.get("voltage");
+    let axis = |v: Option<&Value>, key: &str| v.and_then(|v| v.get(key)).and_then(Value::as_f64);
+
     PacketFields {
+        sirin_time_ms: data.and_then(|d| d.get("time")).and_then(Value::as_f64),
+        gyro_x_dps: axis(gyro, "x").map(|v| v / MICRODEGREES_PER_DEGREE),
+        gyro_y_dps: axis(gyro, "y").map(|v| v / MICRODEGREES_PER_DEGREE),
+        gyro_z_dps: axis(gyro, "z").map(|v| v / MICRODEGREES_PER_DEGREE),
+        mag_x_raw: axis(mag, "x"),
+        mag_y_raw: axis(mag, "y"),
+        mag_z_raw: axis(mag, "z"),
+        high_g_x_raw: axis(high_g, "x"),
+        high_g_y_raw: axis(high_g, "y"),
+        high_g_z_raw: axis(high_g, "z"),
+        velocity_x_mps: axis(velocity, "x"),
+        velocity_y_mps: axis(velocity, "y"),
+        velocity_z_mps: axis(velocity, "z"),
+        barometric_pressure_pa: sensor_ok("baro", "pressure").and_then(Value::as_f64),
+        baro_temperature_c: sensor_ok("baro", "temperature").and_then(Value::as_f64),
+        baro_altitude_m: data.and_then(|d| d.get("altitude")).and_then(Value::as_f64),
+        gps_fix_type: gps.and_then(|g| g.get("fix_type")).and_then(Value::as_str).map(str::to_string),
+        apo_voltage_v: axis(voltage, "apo_v"),
+        main_voltage_v: axis(voltage, "main_v"),
         flight_mode: state.get("mode").and_then(Value::as_str).map(str::to_string),
         altitude_agl_ft: obj_f64(state, "altitude").map(|m| m * METERS_TO_FEET),
         expected_apogee_ft: obj_f64(state, "apogee").map(|m| m * METERS_TO_FEET),
@@ -1860,6 +1936,7 @@ fn parse_csv_replay(content: &str) -> Vec<SirinPacket> {
                     quat_x: parse_opt_f64(parts[18]),
                     quat_y: parse_opt_f64(parts[19]),
                     quat_z: parse_opt_f64(parts[20]),
+                    ..PacketFields::default()
                 },
             })
         })
@@ -2098,6 +2175,62 @@ mod tests {
         approx(f.quat_x, 0.0);
     }
 
+    // Raw sensor readings in `data` (Result-wrapped), e-match voltages and GPS fix type,
+    // using values from a real Sirin DataState packet.
+    #[test]
+    fn extract_fields_data_state_reads_sensor_block() {
+        let raw = serde_json::json!({
+            "packet": { "LogEntry": { "time": 47847, "log": { "DataState": {
+                "data": {
+                    "time": 47847,
+                    "baro": { "pressure": { "Ok": 98095.09 }, "temperature": { "Ok": 39.07 } },
+                    "imu": {
+                        "accel": { "Ok": { "x": 35957, "y": -628, "z": 1006702 } },
+                        "angular_vel": { "Ok": { "x": -682500, "y": 175000, "z": -122500 } }
+                    },
+                    "high_g_imu": { "accel": { "Ok": { "x": -780000, "y": 780000, "z": 780000 } } },
+                    "magnetometer": { "mag": { "Ok": { "x": -1524, "y": 2367, "z": -13161 } }, "temp": { "Ok": 0 } },
+                    "altitude": 272.35
+                },
+                "mode": "Standby",
+                "altitude": 254.01,
+                "gps_fix": { "satellites": 0, "fix_type": "NoFix", "lat": 0.0, "lon": 0.0 },
+                "pos": { "x": -962.77, "y": -1137.41, "z": 254.01 },
+                "vel": { "x": -42.70, "y": -72.23, "z": -5.84 },
+                "rot_quaternion": { "r": -0.533, "x": -0.104, "y": 0.102, "z": -0.833 },
+                "voltage": { "apo_v": 0.0217, "main_v": 0.0352 }
+            }}}}
+        });
+        let f = extract_fields(&raw);
+        approx(f.sirin_time_ms, 47847.0);
+        approx(f.gyro_x_dps, -0.6825); // micro-degrees/s -> degrees/s
+        approx(f.gyro_y_dps, 0.175);
+        approx(f.gyro_z_dps, -0.1225);
+        approx(f.mag_x_raw, -1524.0);
+        approx(f.mag_z_raw, -13161.0);
+        approx(f.high_g_y_raw, 780000.0);
+        approx(f.velocity_x_mps, -42.70);
+        approx(f.barometric_pressure_pa, 98095.09);
+        approx(f.baro_temperature_c, 39.07);
+        approx(f.baro_altitude_m, 272.35);
+        assert_eq!(f.gps_fix_type.as_deref(), Some("NoFix"));
+        approx(f.apo_voltage_v, 0.0217);
+        approx(f.main_voltage_v, 0.0352);
+    }
+
+    // A failed sensor arrives as `{ "Err": ... }` and must show as missing, not zero.
+    #[test]
+    fn extract_fields_failed_sensor_is_none() {
+        let raw = serde_json::json!({ "packet": { "DataState": {
+            "data": { "baro": { "pressure": { "Err": "Timeout" } } },
+            "mode": "Standby"
+        }}});
+        let f = extract_fields(&raw);
+        assert_eq!(f.barometric_pressure_pa, None);
+        assert_eq!(f.gyro_x_dps, None);
+        assert_eq!(f.apo_voltage_v, None);
+    }
+
     // SirinState keeps estimated pos/vel/accel/quaternion under `nominal`,
     // accel is in m/s^2, and apogee may be null (Option).
     #[test]
@@ -2141,3 +2274,4 @@ mod tests {
         assert_eq!(f.altitude_agl_ft, None);
     }
 }
+

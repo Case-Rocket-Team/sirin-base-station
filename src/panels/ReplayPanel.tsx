@@ -175,12 +175,15 @@ export default function ReplayPanel() {
                 <DataBox label="Alt" value={formatValue(packet?.fields.altitudeAglFt, "ft")} />
                 <DataBox label="Mode" value={packet?.fields.flightMode ?? "--"} />
                 <DataBox label="Apogee" value={formatValue(packet?.fields.expectedApogeeFt, "ft")} />
-                <DataBox label="Barometer" value={formatValue(packet?.fields.barometricPressurePa, "Pa")} />
-
+                <p className="font-semibold text-cyan-300 mb-1 mt-2">Barometer</p>
+                <DataBox label="Pressure" value={formatValue(packet?.fields.barometricPressurePa, "Pa")} />
+                <DataBox label="Temp" value={formatValue(packet?.fields.baroTemperatureC, "°C", 1)} />
+                <DataBox label="Baro Alt" value={formatValue(packet?.fields.baroAltitudeM, "m", 1)} />
                 <p className="font-semibold text-cyan-300 mb-1 mt-2">GPS</p>
                 <DataBox label="Lat" value={formatValue(packet?.fields.latitudeDeg, "°", 4)} />
                 <DataBox label="Lon" value={formatValue(packet?.fields.longitudeDeg, "°", 4)} />
                 <DataBox label="Sats" value={packet?.fields.gpsSatelliteCount != null ? String(packet.fields.gpsSatelliteCount) : "--"} />
+                <DataBox label="Fix" value={packet?.fields.gpsFixType ?? "--"} />
                 <DataBox label="Seq" value={String(packet?.sequence ?? "--")} />
               </div>
 
@@ -190,7 +193,10 @@ export default function ReplayPanel() {
                 <DataBox label="X" value={formatValue(packet?.fields.accelXG, "g", 2)} />
                 <DataBox label="Y" value={formatValue(packet?.fields.accelYG, "g", 2)} />
                 <DataBox label="Z" value={formatValue(packet?.fields.accelZG, "g", 2)} />
-
+                <p className="font-semibold text-cyan-300 mb-1 mt-2">High-G (raw)</p>
+                <DataBox label="X" value={formatValue(packet?.fields.highGXRaw, "")} />
+                <DataBox label="Y" value={formatValue(packet?.fields.highGYRaw, "")} />
+                <DataBox label="Z" value={formatValue(packet?.fields.highGZRaw, "")} />
                 <p className="font-semibold text-cyan-300 mb-1 mt-2">Velocity</p>
                 <DataBox label="Speed" value={formatValue(packet?.fields.speedMps, "m/s", 1)} />
                 <DataBox label="X" value={formatValue(packet?.fields.velocityXMps, "m/s", 1)} />
@@ -203,16 +209,17 @@ export default function ReplayPanel() {
                 <DataBox label="X" value={formatValue(packet?.fields.positionXM, "m")} />
                 <DataBox label="Y" value={formatValue(packet?.fields.positionYM, "m")} />
                 <DataBox label="Z" value={formatValue(packet?.fields.positionZM, "m")} />
-
                 <p className="font-semibold text-cyan-300 mb-1 mt-2">Gyro (°/s)</p>
-                <DataBox label="X" value={formatValue(packet?.fields.gyroXDps, "", 1)} />
-                <DataBox label="Y" value={formatValue(packet?.fields.gyroYDps, "", 1)} />
-                <DataBox label="Z" value={formatValue(packet?.fields.gyroZDps, "", 1)} />
-
-                <p className="font-semibold text-cyan-300 mb-1 mt-2">Magnetometer (mT)</p>
-                <DataBox label="X" value={formatValue(packet?.fields.magXMt, "", 2)} />
-                <DataBox label="Y" value={formatValue(packet?.fields.magYMt, "", 2)} />
-                <DataBox label="Z" value={formatValue(packet?.fields.magZMt, "", 2)} />
+                <DataBox label="X" value={formatValue(packet?.fields.gyroXDps, "", 2)} />
+                <DataBox label="Y" value={formatValue(packet?.fields.gyroYDps, "", 2)} />
+                <DataBox label="Z" value={formatValue(packet?.fields.gyroZDps, "", 2)} />
+                <p className="font-semibold text-cyan-300 mb-1 mt-2">Magnetometer (raw)</p>
+                <DataBox label="X" value={formatValue(packet?.fields.magXRaw, "")} />
+                <DataBox label="Y" value={formatValue(packet?.fields.magYRaw, "")} />
+                <DataBox label="Z" value={formatValue(packet?.fields.magZRaw, "")} />
+                <p className="font-semibold text-cyan-300 mb-1 mt-2">E-Match</p>
+                <DataBox label="Apogee" value={formatValue(packet?.fields.apoVoltageV, "V", 3)} />
+                <DataBox label="Main" value={formatValue(packet?.fields.mainVoltageV, "V", 3)} />
               </div>
             </div>
           </div>

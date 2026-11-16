@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { LineChart } from "@mui/x-charts/LineChart";
 import TelemetryStatus from "./TelemetryStatus";
+import RocketOrientation from "./RocketOrientation";
 import { useTelemetrySource } from "../telemetry/useTelemetrySource";
 import type { RecordingFormat, TelemetrySource } from "../telemetry/types";
 
@@ -166,12 +167,15 @@ export default function RawDataPanel({ selectedSource }: Props) {
               <DataBox label="Alt" value={formatValue(telemetry.packet?.fields.altitudeAglFt, "ft")} />
               <DataBox label="Mode" value={telemetry.packet?.fields.flightMode ?? "--"} />
               <DataBox label="Apogee" value={formatValue(telemetry.packet?.fields.expectedApogeeFt, "ft")} />
-              <DataBox label="Barometer" value={formatValue(telemetry.packet?.fields.barometricPressurePa, "Pa")} />
-
+              <p className="font-semibold text-cyan-300 mb-1 mt-2">Barometer</p>
+              <DataBox label="Pressure" value={formatValue(telemetry.packet?.fields.barometricPressurePa, "Pa")} />
+              <DataBox label="Temp" value={formatValue(telemetry.packet?.fields.baroTemperatureC, "°C", 1)} />
+              <DataBox label="Baro Alt" value={formatValue(telemetry.packet?.fields.baroAltitudeM, "m", 1)} />
               <p className="font-semibold text-cyan-300 mb-1 mt-2">GPS</p>
               <DataBox label="Lat" value={formatValue(telemetry.packet?.fields.latitudeDeg, "°", 4)} />
               <DataBox label="Lon" value={formatValue(telemetry.packet?.fields.longitudeDeg, "°", 4)} />
               <DataBox label="Sats" value={telemetry.packet?.fields.gpsSatelliteCount != null ? String(telemetry.packet.fields.gpsSatelliteCount) : "--"} />
+              <DataBox label="Fix" value={telemetry.packet?.fields.gpsFixType ?? "--"} />
               <DataBox label="Seq" value={String(telemetry.packet?.sequence ?? "--")} />
             </div>
 
@@ -181,7 +185,10 @@ export default function RawDataPanel({ selectedSource }: Props) {
               <DataBox label="X" value={formatValue(telemetry.packet?.fields.accelXG, "g", 2)} />
               <DataBox label="Y" value={formatValue(telemetry.packet?.fields.accelYG, "g", 2)} />
               <DataBox label="Z" value={formatValue(telemetry.packet?.fields.accelZG, "g", 2)} />
-
+              <p className="font-semibold text-cyan-300 mb-1 mt-2">High-G (raw)</p>
+              <DataBox label="X" value={formatValue(telemetry.packet?.fields.highGXRaw, "")} />
+              <DataBox label="Y" value={formatValue(telemetry.packet?.fields.highGYRaw, "")} />
+              <DataBox label="Z" value={formatValue(telemetry.packet?.fields.highGZRaw, "")} />
               <p className="font-semibold text-cyan-300 mb-1 mt-2">Velocity</p>
               <DataBox label="Speed" value={formatValue(telemetry.packet?.fields.speedMps, "m/s", 1)} />
               <DataBox label="X" value={formatValue(telemetry.packet?.fields.velocityXMps, "m/s", 1)} />
@@ -194,17 +201,37 @@ export default function RawDataPanel({ selectedSource }: Props) {
               <DataBox label="X" value={formatValue(telemetry.packet?.fields.positionXM, "m")} />
               <DataBox label="Y" value={formatValue(telemetry.packet?.fields.positionYM, "m")} />
               <DataBox label="Z" value={formatValue(telemetry.packet?.fields.positionZM, "m")} />
-
               <p className="font-semibold text-cyan-300 mb-1 mt-2">Gyro (°/s)</p>
-              <DataBox label="X" value={formatValue(telemetry.packet?.fields.gyroXDps, "", 1)} />
-              <DataBox label="Y" value={formatValue(telemetry.packet?.fields.gyroYDps, "", 1)} />
-              <DataBox label="Z" value={formatValue(telemetry.packet?.fields.gyroZDps, "", 1)} />
-
-              <p className="font-semibold text-cyan-300 mb-1 mt-2">Magnetometer (mT)</p>
-              <DataBox label="X" value={formatValue(telemetry.packet?.fields.magXMt, "", 2)} />
-              <DataBox label="Y" value={formatValue(telemetry.packet?.fields.magYMt, "", 2)} />
-              <DataBox label="Z" value={formatValue(telemetry.packet?.fields.magZMt, "", 2)} />
+              <DataBox label="X" value={formatValue(telemetry.packet?.fields.gyroXDps, "", 2)} />
+              <DataBox label="Y" value={formatValue(telemetry.packet?.fields.gyroYDps, "", 2)} />
+              <DataBox label="Z" value={formatValue(telemetry.packet?.fields.gyroZDps, "", 2)} />
+              <p className="font-semibold text-cyan-300 mb-1 mt-2">Magnetometer (raw)</p>
+              <DataBox label="X" value={formatValue(telemetry.packet?.fields.magXRaw, "")} />
+              <DataBox label="Y" value={formatValue(telemetry.packet?.fields.magYRaw, "")} />
+              <DataBox label="Z" value={formatValue(telemetry.packet?.fields.magZRaw, "")} />
+              <p className="font-semibold text-cyan-300 mb-1 mt-2">E-Match</p>
+              <DataBox label="Apogee" value={formatValue(telemetry.packet?.fields.apoVoltageV, "V", 3)} />
+              <DataBox label="Main" value={formatValue(telemetry.packet?.fields.mainVoltageV, "V", 3)} />
+              <p className="font-semibold text-cyan-300 mb-1 mt-2">Quaternion</p>
+              <DataBox label="W" value={formatValue(telemetry.packet?.fields.quatW, "", 4)} />
+              <DataBox label="X" value={formatValue(telemetry.packet?.fields.quatX, "", 4)} />
+              <DataBox label="Y" value={formatValue(telemetry.packet?.fields.quatY, "", 4)} />
+              <DataBox label="Z" value={formatValue(telemetry.packet?.fields.quatZ, "", 4)} />
             </div>
+          </div>
+        </div>
+
+        <div className="rounded-lg border border-white/8 bg-black/25 p-2 flex flex-col">
+          <p className="font-mono text-[10px] uppercase tracking-[0.35em] text-cyan-200/75">
+            Orientation
+          </p>
+          <div className="mt-1 h-[200px] overflow-hidden rounded-lg border border-white/8">
+            <RocketOrientation
+              quatW={telemetry.packet?.fields.quatW ?? null}
+              quatX={telemetry.packet?.fields.quatX ?? null}
+              quatY={telemetry.packet?.fields.quatY ?? null}
+              quatZ={telemetry.packet?.fields.quatZ ?? null}
+            />
           </div>
         </div>
 
