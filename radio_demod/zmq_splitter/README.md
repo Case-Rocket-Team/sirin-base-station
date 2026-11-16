@@ -35,4 +35,3 @@ GNU Radio with `gr-soapy` and `gr-zeromq`. HackRF drivers must be installed.
 
 ## Maintenance
 If you add a dependency, document it here.
-

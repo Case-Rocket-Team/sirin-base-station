@@ -52,7 +52,7 @@ class sdrplay_lora_rx(gr.top_block):
             self.source = soapy.source(
                 "driver=sdrplay", "fc32", 1, "", "", [""], [""]
             )
-            self.source.set_antenna(0, "RX") 
+            self.source.set_antenna(0, "RX")
             self.source.set_sample_rate(0, samp_rate)
             self.source.set_frequency(0, center_freq)
             self.source.set_bandwidth(0, bw)

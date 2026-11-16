@@ -1,59 +1,47 @@
-import { useState, useEffect } from "react";
-import { invoke, Channel } from "@tauri-apps/api/core";
-
-import InitializationPanel from "./panels/InitializationPanel";
+import { useState } from "react";
+import HomePanel from "./panels/HomePanel";
+import WindowShell from "./panels/WindowShell";
 import TelemetryPanel from "./panels/TelemetryPanel";
 import UsbPanel from "./panels/UsbPanel";
-import RawDataPanel from "./panels/RawDataPanel"
+import RawDataPanel from "./panels/RawDataPanel";
+import SettingsPanel from "./panels/SettingsPanel";
+import ReplayPanel from "./panels/ReplayPanel";
+import RecoveryPanel from "./panels/RecoveryPanel";
+import type { AppPage, TelemetrySource } from "./telemetry/types";
 
-function App() {
-  const [activePanel, setActivePanel] =
-    useState<"init" | "telemetry" | "usb" | "rawData">("init");
+export const pages: Array<{ id: Exclude<AppPage, "home">; label: string; description: string }> = [
+  { id: "overview", label: "Overview", description: "Flight overview and live telemetry" },
+  { id: "raw", label: "Raw Data", description: "Inspect validated packets and manage recording" },
+  { id: "replay", label: "Replay", description: "Load recorded telemetry and play it back through the UI" },
+  { id: "recovery", label: "Recovery", description: "Compare radio callsigns and compute a bearing between positions" },
+  { id: "usb", label: "USB Console", description: "USB status and direct Sirin telemetry" },
+  { id: "settings", label: "Settings", description: "Adjust telemetry and recording configuration" },
+];
 
-  const switchScreen = (panel: "init" | "telemetry" | "usb" | "rawData") => {
-    setActivePanel(panel);
-  };
+export default function App() {
+  const [activePage, setActivePage] = useState<AppPage>("home");
+  const [selectedSource, setSelectedSource] = useState<TelemetrySource>("lora");
 
-  /*useEffect(() => {
-    const onLoraConnMsg = new Channel<any>();
-    const onPacket = new Channel<any>();
-
-    onLoraConnMsg.onmessage = (msg) => {
-      console.log("LoRa connection message:", msg);
-    };
-
-    onPacket.onmessage = (msg) => {
-      console.log("Packet received:", msg);
-      setData(JSON.stringify(msg, null, 4));
-    };
-
-    invoke("listen_to_lora", {
-      onLoraConnMsg,
-      onPacket,
-    }).catch((err) => {
-      console.error("Error invoking listen_to_lora:", err);
-    });
-  }, []);*/
+  const activePageMeta = pages.find((page) => page.id === activePage);
 
   return (
-    <>
-      {activePanel === "init" && (
-        <InitializationPanel switchScreen={switchScreen} />
-      )}
-
-      {activePanel === "telemetry" && (
-        <TelemetryPanel goBack={() => switchScreen("init")} />
-      )}
-
-      {activePanel === "usb" && (
-        <UsbPanel goBack={() => switchScreen("init")} />
-      )}
-
-      {activePanel === "rawData" && (
-        <RawDataPanel goBack={() => switchScreen("init")} />
-      )}
-    </>
+    <div className="h-screen bg-[radial-gradient(circle_at_top,rgba(57,132,255,0.24),transparent_32%),linear-gradient(180deg,#050814_0%,#09101b_48%,#05070e_100%)] text-slate-100 overflow-x-hidden overflow-y-scroll">
+      <div className="app-viewport">
+        {activePage === "home" ? (
+          <HomePanel pages={pages} selectedSource={selectedSource} onPageChange={setActivePage} />
+        ) : (
+          <WindowShell title={activePageMeta?.label ?? "Window"} description={activePageMeta?.description ?? ""} onBack={() => setActivePage("home")} selectedSource={selectedSource} onSourceChange={setSelectedSource}>
+            <div className="app-window-contentl">
+              {activePage === "overview" && <TelemetryPanel selectedSource={selectedSource} />}
+              {activePage === "raw" && <RawDataPanel selectedSource={selectedSource} />}
+              {activePage === "replay" && <ReplayPanel />}
+              {activePage === "recovery" && <RecoveryPanel />}
+              {activePage === "usb" && <UsbPanel />}
+              {activePage === "settings" && <SettingsPanel selectedSource={selectedSource} />}
+            </div>
+          </WindowShell>
+        )}
+      </div>
+    </div>
   );
 }
-
-export default App;

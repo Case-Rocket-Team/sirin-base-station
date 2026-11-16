@@ -71,7 +71,7 @@ class lora_rx(gr.top_block):
         self.lora_sdr_dewhitening_0 = lora_sdr.dewhitening()
         self.lora_sdr_deinterleaver_0 = lora_sdr.deinterleaver(soft_decoding)
         self.lora_sdr_crc_verif_0 = lora_sdr.crc_verif(2, True)
-        
+
         # Added to print packets to terminal
         self.blocks_message_debug_0 = blocks.message_debug()
 
@@ -79,7 +79,7 @@ class lora_rx(gr.top_block):
         # Connections
         ##################################################
         self.msg_connect((self.lora_sdr_header_decoder_0, 'frame_info'), (self.lora_sdr_frame_sync_0, 'frame_info'))
-        
+
         # Packet Printing Connection
         self.msg_connect((self.lora_sdr_crc_verif_0, 'msg'), (self.blocks_message_debug_0, 'print'))
 
@@ -91,7 +91,7 @@ class lora_rx(gr.top_block):
         self.connect((self.lora_sdr_hamming_dec_0, 0), (self.lora_sdr_header_decoder_0, 0))
         self.connect((self.lora_sdr_header_decoder_0, 0), (self.lora_sdr_dewhitening_0, 0))
         self.connect((self.lora_sdr_dewhitening_0, 0), (self.lora_sdr_crc_verif_0, 0))
-        
+
 class byte_recv_callback(gr.sync_block):
     """
     A sink block that calls a Python function whenever new bytes arrive.

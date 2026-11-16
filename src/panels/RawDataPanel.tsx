@@ -1,249 +1,556 @@
 import { useEffect, useState } from "react";
-import { invoke, Channel } from "@tauri-apps/api/core";
-import Window from "../panels/Window";
+import { LineChart } from "@mui/x-charts/LineChart";
+import TelemetryStatus from "./TelemetryStatus";
+import RocketOrientation from "./RocketOrientation";
+import { useTelemetrySource } from "../telemetry/useTelemetrySource";
+import type { RecordingFormat, TelemetrySource } from "../telemetry/types";
 
 type Props = {
-  goBack: () => void;
+  selectedSource: TelemetrySource;
 };
 
-interface SirinDataState {
-  altitude: number | null;
-  apogee: number | null;
-  pos: { x: number; y: number; z: number } | null;
-  vel: { x: number; y: number; z: number } | null;
-  rot_quaternion: { r: number; x: number; y: number; z: number } | null;
-  gps_fix: {
-    itow: number;
-    satellites: number;
-    fix_type: string;
-    pos_acc: number;
-    vel_acc: number;
-    pos_dop: number;
-    lat: number;
-    lon: number;
-  } | null;
-  data: {
-    time: number | null;
-    altitude: number | null;
-    baro: {
-      pressure: number | null;
-      temperature: number | null;
-    } | null;
-    imu: {
-      accel: { x: number; y: number; z: number } | null;
-      angular_vel: { x: number; y: number; z: number } | null;
-    } | null;
-    high_g_imu: {
-      accel: { x: number; y: number; z: number } | null;
-    } | null;
-    magnetometer: {
-        mag: {x: number; y: number; z: number} | null,
-    } | null;
-  } | null;
-}
-
-const EMPTY: SirinDataState = {
-  altitude: null, apogee: null, pos: null, vel: null,
-  rot_quaternion: null, gps_fix: null, data: null,
+type HistoryPoint = {
+  id: string;
+  time: string;
+  accelTotal: number;
+  speed: number;
+  altitude: number;
 };
 
-function resolveOkErr<T>(field: any): T | null {
-  if (!field) return null;
-  if ("Ok" in field) return field.Ok;
-  return null;
-}
+export default function RawDataPanel({ selectedSource }: Props) {
+  const telemetry = useTelemetrySource(selectedSource);
+  const [filename, setFilename] = useState(`${selectedSource}-capture`);
+  const [format, setFormat] = useState<RecordingFormat>("jsonl");
+  const [commandError, setCommandError] = useState<string | null>(null);
 
-function fmt(v: number | null | undefined, dec = 2): string {
-  if (v === null || v === undefined) return "—";
-  return v.toFixed(dec);
-}
+  const [history, setHistory] = useState<HistoryPoint[]>([]);
 
-function Cell({ label, value, unit, warn }: {
-  label: string; value: string; unit?: string; warn?: boolean;
-}) {
-  return (
-    <div className="flex flex-col gap-0.5 bg-gray-800 rounded p-3">
-      <span className="text-gray-500 text-xs font-mono uppercase tracking-wider">{label}</span>
-      <span className={`text-sm font-mono font-medium ${
-        warn ? "text-yellow-400" : value === "—" ? "text-gray-600" : "text-gray-100"
-      }`}>
-        {value}
-        {unit && value !== "—"
-          ? <span className="text-gray-500 text-xs ml-1">{unit}</span>
-          : null}
-      </span>
-    </div>
-  );
-}
+  // Reset history when telemetry source changes
+  useEffect(() => {
+    setFilename(`${selectedSource}-capture`);
+    setHistory([]);
+  }, [selectedSource]);
 
-function SectionHeader({ title }: { title: string }) {
-  return (
-    <div className="col-span-full border-b border-gray-700 pb-1 mb-1">
-      <span className="text-gray-500 text-xs font-mono uppercase tracking-widest">{title}</span>
-    </div>
-  );
-}
+  // Capture real-time telemetry packets for Accel, Speed, and Altitude
+  useEffect(() => {
+    if (!telemetry.packet) return;
 
-export default function RawDataPanel({ goBack }: Props) {
-  const [ds, setDs] = useState<SirinDataState>(EMPTY);
-  const [lastUpdate, setLastUpdate] = useState<number | null>(null);
+    const packetTime = telemetry.packet.receivedAtMs ? new Date(telemetry.packet.receivedAtMs) : new Date();
+    const formattedTime = `${packetTime.toLocaleTimeString([], {
+      minute: "2-digit",
+      second: "2-digit",
+    })}.${packetTime.getMilliseconds().toString().padStart(3, "0")}`;
+
+    const fields = telemetry.packet.fields as Record<string, unknown> | undefined;
+
+    setHistory((prev) => {
+      const lastPoint = prev[prev.length - 1];
+
+      // Accel: fallback to previous point's value if missing in this packet
+      const rawAccel = fields?.accelTotalG ?? fields?.accelTotal ?? fields?.accel_total;
+      const parsedAccel =
+        typeof rawAccel === "number"
+          ? rawAccel
+          : rawAccel != null && !isNaN(parseFloat(String(rawAccel)))
+          ? parseFloat(String(rawAccel))
+          : lastPoint?.accelTotal ?? 0;
+
+      // Speed: fallback to previous point's value if missing
+      const rawSpeed = fields?.speedMps ?? fields?.speed_mps ?? fields?.speed;
+      const parsedSpeed =
+        typeof rawSpeed === "number"
+          ? rawSpeed
+          : rawSpeed != null && !isNaN(parseFloat(String(rawSpeed)))
+          ? parseFloat(String(rawSpeed))
+          : lastPoint?.speed ?? 0;
+
+      // Altitude: fallback to previous point's value if missing
+      const rawAlt = fields?.altitudeAglFt ?? fields?.altitude_agl_ft ?? fields?.altitude;
+      const parsedAlt =
+        typeof rawAlt === "number"
+          ? rawAlt
+          : rawAlt != null && !isNaN(parseFloat(String(rawAlt)))
+          ? parseFloat(String(rawAlt))
+          : lastPoint?.altitude ?? 0;
+
+      const newPoint: HistoryPoint = {
+        id: `${formattedTime}-${telemetry.packet?.sequence ?? Math.random()}`,
+        time: formattedTime,
+        accelTotal: parsedAccel,
+        speed: parsedSpeed,
+        altitude: parsedAlt,
+      };
+
+      // Keep strict rolling window of 50 points
+      return [...prev, newPoint].slice(-50);
+    });
+  }, [telemetry.packet]);
 
   useEffect(() => {
-    const onPacket = new Channel();
-    const onLoraConnMsg = new Channel();
+    if (telemetry.snapshot?.config.defaultRecordingFormat) {
+      setFormat(telemetry.snapshot.config.defaultRecordingFormat);
+    }
+  }, [telemetry.snapshot?.config.defaultRecordingFormat]);
 
-    onPacket.onmessage = (msg: any) => {
-      const raw = msg.packet?.packet?.LogEntry?.log?.DataState ?? null;
-      if (!raw) return;
+  const handleToggleRecording = async () => {
+    setCommandError(null);
+    try {
+      if (telemetry.recordingStatus?.active) {
+        await telemetry.stopRecording();
+      } else {
+        await telemetry.startRecording({
+          source: selectedSource,
+          filename,
+          format,
+        });
+      }
+      await telemetry.refreshSnapshot();
+    } catch (error) {
+      setCommandError(error instanceof Error ? error.message : String(error));
+    }
+  };
 
-      setDs({
-        altitude:       raw.altitude ?? null,
-        apogee:         raw.apogee   ?? null,
-        pos:            raw.pos      ?? null,
-        vel:            raw.vel      ?? null,
-        rot_quaternion: raw.rot_quaternion ?? null,
-        gps_fix:        raw.gps_fix  ?? null,
-        data: raw.data ? {
-          time:     raw.data.time     ?? null,
-          altitude: raw.data.altitude ?? null,
-          baro: raw.data.baro ? {
-            pressure:    resolveOkErr(raw.data.baro.pressure),
-            temperature: resolveOkErr(raw.data.baro.temperature),
-          } : null,
-          imu: raw.data.imu ? {
-            accel: resolveOkErr(raw.data.imu.accel),
-            angular_vel:  resolveOkErr(raw.data.imu.angular_vel),
-          } : null,
-          high_g_imu: raw.data.high_g_imu ? {
-            accel: resolveOkErr(raw.data.high_g_imu.accel),
-          } : null,
-          magnetometer: raw.data.magnetometer ? {
-            mag: resolveOkErr(raw.data.magnetometer.mag)
-          } : null,
-        } : null,
-      });
+  // Generate unique numeric indices [0, 1, 2, ..., N-1] for X axis positioning
+  const xAxisIndices = history.length ? history.map((_, i) => i) : [0];
 
-      setLastUpdate(Date.now());
-    };
+  const accelTotalData = history.length ? history.map((d) => d.accelTotal) : [0];
+  const speedData = history.length ? history.map((d) => d.speed) : [0];
+  const altitudeData = history.length ? history.map((d) => d.altitude) : [0];
 
-    invoke("listen_to_lora", { onLoraConnMsg: onLoraConnMsg, onPacket: onPacket }).catch(console.error);
+  // Dynamic Y-axis limits for Acceleration
+  const minY = history.length ? Math.min(...accelTotalData) : 0;
+  const maxY = history.length ? Math.max(...accelTotalData) : 1.2;
+  const padding = Math.max((maxY - minY) * 0.25, 0.1);
 
-    return () => {
-      invoke("stop_lora").catch(() => {});
-    };
-  }, []);
+  // Dynamic Y-axis limits for Velocity
+  const minSpeedY = history.length ? Math.min(...speedData) : 0;
+  const maxSpeedY = history.length ? Math.max(...speedData) : 10;
+  const speedPadding = Math.max((maxSpeedY - minSpeedY) * 0.25, 1);
 
-  const isStale = lastUpdate !== null && Date.now() - lastUpdate > 3000;
+  // Dynamic Y-axis limits for Altitude
+  const minAltY = history.length ? Math.min(...altitudeData) : 0;
+  const maxAltY = history.length ? Math.max(...altitudeData) : 100;
+  const altPadding = Math.max((maxAltY - minAltY) * 0.25, 5);
+
+  // Expanded bottom margin to cleanly render X-axis labels without clipping
+  const sharedMargin = { top: 35, right: 35, bottom: 60, left: 65 };
+  const sharedYAxisWidth = 65;
 
   return (
-    <main className="min-h-screen p-6 bg-gray-900 relative">
-      <button
-        onClick={goBack}
-        className="absolute top-4 left-4 px-3 py-1 bg-gray-300 rounded hover:bg-gray-400"
-      >
-        ← Back
-      </button>
+    <div className="w-full h-full max-h-screen overflow-y-auto min-h-0 space-y-6 p-3 pb-24">
+      {/* Upper Telemetry Grid */}
+      <div className="responsive-panel-grid responsive-panel-grid-raw">
+        <TelemetryStatus
+          source={selectedSource}
+          status={telemetry.status}
+          packet={telemetry.packet}
+          expectedPacketsPerSecond={telemetry.snapshot?.config.expectedPacketsPerSecond ?? 10}
+          staleTimeoutMs={telemetry.snapshot?.config.staleTimeoutMs ?? 3000}
+        />
 
-      <div className="absolute top-4 right-4">
-        <div className={`px-3 py-1 rounded text-sm font-mono ${
-          lastUpdate === null ? "bg-gray-700 text-gray-400" :
-          isStale ? "bg-red-900 text-red-300" : "bg-green-900 text-green-300"
-        }`}>
-          {lastUpdate === null ? "● Waiting for packets" :
-           isStale ? "● Stale" : "● Live"}
+        <div className="rounded-lg border border-white/8 bg-black/25 p-2">
+          <div className="flex items-center justify-between gap-2">
+            <p className="font-mono text-[10px] uppercase tracking-[0.35em] text-cyan-200/75">
+              Telemetry Data
+            </p>
+            <button
+              onClick={() => void telemetry.refreshSnapshot()}
+              className="shrink-0 rounded-lg border border-white/10 bg-white/5 px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-[0.25em] text-slate-200 hover:bg-white/10"
+            >
+              Refresh
+            </button>
+          </div>
+
+          <div className="mt-1 grid grid-cols-3 gap-1 text-[8px]">
+            <div>
+              <p className="font-semibold text-cyan-300 mb-1">Flight</p>
+              <DataBox label="Alt" value={formatValue(telemetry.packet?.fields.altitudeAglFt, "ft")} />
+              <DataBox label="Mode" value={telemetry.packet?.fields.flightMode ?? "--"} />
+              <DataBox label="Apogee" value={formatValue(telemetry.packet?.fields.expectedApogeeFt, "ft")} />
+              <p className="font-semibold text-cyan-300 mb-1 mt-2">Barometer</p>
+              <DataBox label="Pressure" value={formatValue(telemetry.packet?.fields.barometricPressurePa, "Pa")} />
+              <DataBox label="Temp" value={formatValue(telemetry.packet?.fields.baroTemperatureC, "°C", 1)} />
+              <DataBox label="Baro Alt" value={formatValue(telemetry.packet?.fields.baroAltitudeM, "m", 1)} />
+              <p className="font-semibold text-cyan-300 mb-1 mt-2">GPS</p>
+              <DataBox label="Lat" value={formatValue(telemetry.packet?.fields.latitudeDeg, "°", 4)} />
+              <DataBox label="Lon" value={formatValue(telemetry.packet?.fields.longitudeDeg, "°", 4)} />
+              <DataBox label="Sats" value={telemetry.packet?.fields.gpsSatelliteCount != null ? String(telemetry.packet.fields.gpsSatelliteCount) : "--"} />
+              <DataBox label="Fix" value={telemetry.packet?.fields.gpsFixType ?? "--"} />
+              <DataBox label="Seq" value={String(telemetry.packet?.sequence ?? "--")} />
+            </div>
+
+            <div>
+              <p className="font-semibold text-cyan-300 mb-1">Accel</p>
+              <DataBox label="Total" value={formatValue(telemetry.packet?.fields.accelTotalG, "g", 2)} />
+              <DataBox label="X" value={formatValue(telemetry.packet?.fields.accelXG, "g", 2)} />
+              <DataBox label="Y" value={formatValue(telemetry.packet?.fields.accelYG, "g", 2)} />
+              <DataBox label="Z" value={formatValue(telemetry.packet?.fields.accelZG, "g", 2)} />
+              <p className="font-semibold text-cyan-300 mb-1 mt-2">High-G (raw)</p>
+              <DataBox label="X" value={formatValue(telemetry.packet?.fields.highGXRaw, "")} />
+              <DataBox label="Y" value={formatValue(telemetry.packet?.fields.highGYRaw, "")} />
+              <DataBox label="Z" value={formatValue(telemetry.packet?.fields.highGZRaw, "")} />
+              <p className="font-semibold text-cyan-300 mb-1 mt-2">Velocity</p>
+              <DataBox label="Speed" value={formatValue(telemetry.packet?.fields.speedMps, "m/s", 1)} />
+              <DataBox label="X" value={formatValue(telemetry.packet?.fields.velocityXMps, "m/s", 1)} />
+              <DataBox label="Y" value={formatValue(telemetry.packet?.fields.velocityYMps, "m/s", 1)} />
+              <DataBox label="Z" value={formatValue(telemetry.packet?.fields.velocityZMps, "m/s", 1)} />
+            </div>
+
+            <div>
+              <p className="font-semibold text-cyan-300 mb-1">Position</p>
+              <DataBox label="X" value={formatValue(telemetry.packet?.fields.positionXM, "m")} />
+              <DataBox label="Y" value={formatValue(telemetry.packet?.fields.positionYM, "m")} />
+              <DataBox label="Z" value={formatValue(telemetry.packet?.fields.positionZM, "m")} />
+              <p className="font-semibold text-cyan-300 mb-1 mt-2">Gyro (°/s)</p>
+              <DataBox label="X" value={formatValue(telemetry.packet?.fields.gyroXDps, "", 2)} />
+              <DataBox label="Y" value={formatValue(telemetry.packet?.fields.gyroYDps, "", 2)} />
+              <DataBox label="Z" value={formatValue(telemetry.packet?.fields.gyroZDps, "", 2)} />
+              <p className="font-semibold text-cyan-300 mb-1 mt-2">Magnetometer (raw)</p>
+              <DataBox label="X" value={formatValue(telemetry.packet?.fields.magXRaw, "")} />
+              <DataBox label="Y" value={formatValue(telemetry.packet?.fields.magYRaw, "")} />
+              <DataBox label="Z" value={formatValue(telemetry.packet?.fields.magZRaw, "")} />
+              <p className="font-semibold text-cyan-300 mb-1 mt-2">E-Match</p>
+              <DataBox label="Apogee" value={formatValue(telemetry.packet?.fields.apoVoltageV, "V", 3)} />
+              <DataBox label="Main" value={formatValue(telemetry.packet?.fields.mainVoltageV, "V", 3)} />
+              <p className="font-semibold text-cyan-300 mb-1 mt-2">Quaternion</p>
+              <DataBox label="W" value={formatValue(telemetry.packet?.fields.quatW, "", 4)} />
+              <DataBox label="X" value={formatValue(telemetry.packet?.fields.quatX, "", 4)} />
+              <DataBox label="Y" value={formatValue(telemetry.packet?.fields.quatY, "", 4)} />
+              <DataBox label="Z" value={formatValue(telemetry.packet?.fields.quatZ, "", 4)} />
+            </div>
+          </div>
+        </div>
+
+        <div className="rounded-lg border border-white/8 bg-black/25 p-2 flex flex-col">
+          <p className="font-mono text-[10px] uppercase tracking-[0.35em] text-cyan-200/75">
+            Orientation
+          </p>
+          <div className="mt-1 h-[200px] overflow-hidden rounded-lg border border-white/8">
+            <RocketOrientation
+              quatW={telemetry.packet?.fields.quatW ?? null}
+              quatX={telemetry.packet?.fields.quatX ?? null}
+              quatY={telemetry.packet?.fields.quatY ?? null}
+              quatZ={telemetry.packet?.fields.quatZ ?? null}
+            />
+          </div>
+        </div>
+
+        <div className="rounded-lg border border-white/8 bg-black/25 p-2 max-h-[200px] overflow-hidden flex flex-col">
+          <p className="font-mono text-[10px] uppercase tracking-[0.35em] text-cyan-200/75">
+            Raw Packet JSON
+          </p>
+          <pre className="mt-1 overflow-auto flex-1 rounded-lg border border-white/8 bg-black/35 p-1.5 text-[7px] text-slate-200">
+            {telemetry.packet
+              ? JSON.stringify(telemetry.packet.raw, null, 2)
+              : "No packet."}
+          </pre>
+        </div>
+
+        <div className="rounded-lg border border-white/8 bg-black/25 p-2">
+          <p className="font-mono text-[10px] uppercase tracking-[0.35em] text-cyan-200/75">
+            Recording
+          </p>
+
+          <label className="mt-1 block text-[10px] text-slate-300">
+            <span className="mb-0.5 block font-mono text-[9px] uppercase tracking-[0.2em] text-slate-400">
+              File
+            </span>
+            <input
+              value={filename}
+              onChange={(event) => setFilename(event.target.value)}
+              className="w-full rounded-lg border border-white/10 bg-slate-900/80 px-1.5 py-1 text-slate-100 outline-none transition focus:border-cyan-300/40 text-[10px]"
+            />
+          </label>
+
+          <label className="mt-1 block text-[10px] text-slate-300">
+            <span className="mb-0.5 block font-mono text-[9px] uppercase tracking-[0.2em] text-slate-400">
+              Format
+            </span>
+            <select
+              value={format}
+              onChange={(event) => setFormat(event.target.value as RecordingFormat)}
+              className="w-full rounded-lg border border-white/10 bg-slate-900/80 px-1.5 py-1 text-slate-100 outline-none transition focus:border-cyan-300/40 text-[10px]"
+            >
+              <option value="jsonl">JSONL</option>
+              <option value="csv">CSV</option>
+            </select>
+          </label>
+
+          <button
+            onClick={() => void handleToggleRecording()}
+            className={`mt-1 w-full rounded-lg px-1.5 py-1 font-mono text-[9px] uppercase tracking-[0.25em] transition ${
+              telemetry.recordingStatus?.active
+                ? "bg-rose-500/90 text-white hover:bg-rose-500"
+                : "bg-emerald-500/90 text-slate-950 hover:bg-emerald-400"
+            }`}
+          >
+            {telemetry.recordingStatus?.active ? "Stop" : "Start"}
+          </button>
+
+          {(commandError || telemetry.recordingStatus?.lastError) && (
+            <p className="mt-1 text-[9px] text-rose-300 line-clamp-1">
+              {commandError ?? telemetry.recordingStatus?.lastError}
+            </p>
+          )}
+        </div>
+
+        <div className="rounded-lg border border-white/8 bg-black/25 p-2">
+          <p className="font-mono text-[10px] uppercase tracking-[0.35em] text-cyan-200/75">
+            Status
+          </p>
+          <dl className="mt-1 text-[9px] text-slate-200 space-y-0.5">
+            <InfoRow label="Active" value={telemetry.recordingStatus?.active ? "Yes" : "No"} />
+            <InfoRow label="Source" value={telemetry.recordingStatus?.source ?? "--"} />
+            <InfoRow label="Format" value={telemetry.recordingStatus?.format ?? "--"} />
+            <InfoRow label="Packets" value={String(telemetry.recordingStatus?.packetsWritten ?? 0)} />
+          </dl>
+          <p className="mt-1 text-[8px] text-slate-400 overflow-hidden text-ellipsis">
+            {telemetry.recordingStatus?.path?.split(/[/\\]/).pop() ?? "None"}
+          </p>
         </div>
       </div>
 
-      {/* State */}
-      <Window x={0} y={5} width={30} height={22}>
-        <div className="grid grid-cols-2 gap-2 p-1 h-full content-start">
-          <SectionHeader title="State" />
-          <Cell label="Altitude"  value={fmt(ds.altitude)}       unit="m" />
-          <Cell label="Apogee"    value={fmt(ds.apogee)}         unit="m" />
-          <Cell label="Time"      value={fmt(ds.data?.time, 0)}  unit="ms" />
-          <Cell label="Data alt"  value={fmt(ds.data?.altitude)} unit="m" />
-        </div>
-      </Window>
+      {/* Full Width Stacked Charts (Long Vertical Scrollable Stack) */}
+      <div className="flex flex-col gap-6 w-full">
+        {/* 1. Total Acceleration Chart */}
+        <div className="w-full min-w-0 rounded-lg border border-white/8 bg-black/25 p-3 overflow-hidden">
+          <div className="flex items-center justify-between mb-1">
+            <p className="font-mono text-[10px] uppercase tracking-[0.35em] text-cyan-200/75">
+              Total Acceleration vs Time
+            </p>
+            <span className="font-mono text-[9px] text-cyan-300 bg-cyan-950/40 px-1.5 py-0.5 rounded border border-cyan-800/40">
+              Live: {accelTotalData[accelTotalData.length - 1]?.toFixed(2)} g | Pts: {history.length}
+            </span>
+          </div>
 
-      {/* Position & Velocity */}
-      <Window x={30} y={5} width={35} height={22}>
-        <div className="grid grid-cols-3 gap-2 p-1 h-full content-start">
-          <SectionHeader title="Position" />
-          <Cell label="Pos X" value={fmt(ds.pos?.x)} unit="m" />
-          <Cell label="Pos Y" value={fmt(ds.pos?.y)} unit="m" />
-          <Cell label="Pos Z" value={fmt(ds.pos?.z)} unit="m" />
-          <SectionHeader title="Velocity" />
-          <Cell label="Vel X" value={fmt(ds.vel?.x)} unit="m/s" />
-          <Cell label="Vel Y" value={fmt(ds.vel?.y)} unit="m/s" />
-          <Cell label="Vel Z" value={fmt(ds.vel?.z)} unit="m/s" />
+          <div className="w-full h-[300px] relative">
+            <LineChart
+              height={300}
+              skipAnimation
+              series={[
+                {
+                  data: accelTotalData,
+                  label: "Total Accel (g)",
+                  color: "#38bdf8",
+                  showMark: false,
+                },
+              ]}
+              xAxis={[
+                {
+                  scaleType: "point",
+                  data: xAxisIndices,
+                  label: "Time",
+                  valueFormatter: (idx: string | number) => history[Number(idx)]?.time.split(".")[0] ?? "",
+                  tickInterval: (_: unknown, index: number) => index % Math.ceil((history.length || 1) / 10) === 0,
+                  tickLabelStyle: { fill: "#94a3b8", fontSize: 10 },
+                },
+              ]}
+              yAxis={[
+                {
+                  width: sharedYAxisWidth,
+                  label: "Total Accel (g)",
+                  min: minY - padding,
+                  max: maxY + padding,
+                  valueFormatter: (value: number) => `${Number(value).toFixed(2)} g`,
+                  tickLabelStyle: { fill: "#fefefe", fontSize: 10 },
+                },
+              ]}
+              margin={sharedMargin}
+              grid={{ horizontal: true }}
+              slotProps={{
+                legend: {},
+              }}
+              sx={{
+                width: "100%",
+                "& .MuiChartsLegend-root, & .MuiChartsLegend-root text, & .MuiChartsLegend-root tspan, & .MuiChartsLegend-label": {
+                  fill: "#f8fafc !important",
+                  color: "#f8fafc !important",
+                  fontSize: "10px !important",
+                },
+                "& .MuiChartsAxis-line, & .MuiChartsAxis-tick": {
+                  stroke: "rgba(255, 255, 255, 0.4) !important",
+                },
+                "& .MuiChartsAxis-label": {
+                  fill: "#94a3b8 !important",
+                  fontSize: "10px",
+                },
+                "& .MuiChartsGrid-line": {
+                  stroke: "rgba(255, 255, 255, 0.05)",
+                  strokeDasharray: "3 3",
+                },
+              }}
+            />
+          </div>
         </div>
-      </Window>
 
-      {/* Quaternion */}
-      <Window x={65} y={5} width={35} height={22}>
-        <div className="grid grid-cols-2 gap-2 p-1 h-full content-start">
-          <SectionHeader title="Quaternion" />
-          <Cell label="R" value={fmt(ds.rot_quaternion?.r, 4)} />
-          <Cell label="X" value={fmt(ds.rot_quaternion?.x, 4)} />
-          <Cell label="Y" value={fmt(ds.rot_quaternion?.y, 4)} />
-          <Cell label="Z" value={fmt(ds.rot_quaternion?.z, 4)} />
-        </div>
-      </Window>
+        {/* 2. Velocity vs Time Chart */}
+        <div className="w-full min-w-0 rounded-lg border border-white/8 bg-black/25 p-3 overflow-hidden">
+          <div className="flex items-center justify-between mb-1">
+            <p className="font-mono text-[10px] uppercase tracking-[0.35em] text-cyan-200/75">
+              Velocity vs Time
+            </p>
+            <span className="font-mono text-[9px] text-cyan-300 bg-cyan-950/40 px-1.5 py-0.5 rounded border border-cyan-800/40">
+              Live: {speedData[speedData.length - 1]?.toFixed(1)} m/s | Pts: {history.length}
+            </span>
+          </div>
 
-      {/* GPS */}
-      <Window x={0} y={27} width={50} height={28}>
-        <div className="grid grid-cols-3 gap-2 p-1 h-full content-start">
-          <SectionHeader title="GPS" />
-          <Cell label="Lat"        value={fmt(ds.gps_fix?.lat, 6)}  unit="°" />
-          <Cell label="Lon"        value={fmt(ds.gps_fix?.lon, 6)}  unit="°" />
-          <Cell label="Satellites" value={String(ds.gps_fix?.satellites ?? "—")}
-                warn={(ds.gps_fix?.satellites ?? 99) < 4} />
-          <Cell label="Fix type"   value={String(ds.gps_fix?.fix_type ?? "—")} />
-          <Cell label="Pos acc"    value={fmt(ds.gps_fix?.pos_acc, 0)} unit="cm" />
-          <Cell label="Vel acc"    value={fmt(ds.gps_fix?.vel_acc, 0)} unit="cm" />
-          <Cell label="PDOP"       value={fmt(ds.gps_fix?.pos_dop)}
-                warn={(ds.gps_fix?.pos_dop ?? 0) > 4} />
-          <Cell label="iTOW"       value={fmt(ds.gps_fix?.itow, 0)} unit="ms" />
+          <div className="w-full h-[300px] relative">
+            <LineChart
+              height={300}
+              skipAnimation
+              series={[
+                {
+                  data: speedData,
+                  label: "Speed (m/s)",
+                  color: "#34d399",
+                  showMark: false,
+                },
+              ]}
+              xAxis={[
+                {
+                  scaleType: "point",
+                  data: xAxisIndices,
+                  label: "Time",
+                  valueFormatter: (idx: string | number) => history[Number(idx)]?.time.split(".")[0] ?? "",
+                  tickInterval: (_: unknown, index: number) => index % Math.ceil((history.length || 1) / 10) === 0,
+                  tickLabelStyle: { fill: "#94a3b8", fontSize: 10 },
+                },
+              ]}
+              yAxis={[
+                {
+                  width: sharedYAxisWidth,
+                  label: "Speed (m/s)",
+                  min: minSpeedY - speedPadding,
+                  max: maxSpeedY + speedPadding,
+                  valueFormatter: (value: number) => `${Number(value).toFixed(1)} m/s`,
+                  tickLabelStyle: { fill: "#fefefe", fontSize: 10 },
+                },
+              ]}
+              margin={sharedMargin}
+              grid={{ horizontal: true }}
+              slotProps={{
+                legend: {},
+              }}
+              sx={{
+                width: "100%",
+                "& .MuiChartsLegend-root, & .MuiChartsLegend-root text, & .MuiChartsLegend-root tspan, & .MuiChartsLegend-label": {
+                  fill: "#f8fafc !important",
+                  color: "#f8fafc !important",
+                  fontSize: "10px !important",
+                },
+                "& .MuiChartsAxis-line, & .MuiChartsAxis-tick": {
+                  stroke: "rgba(255, 255, 255, 0.15)",
+                },
+                "& .MuiChartsAxis-label": {
+                  fill: "#94a3b8",
+                  fontSize: "10px",
+                },
+                "& .MuiChartsGrid-line": {
+                  stroke: "rgba(255, 255, 255, 0.05)",
+                  strokeDasharray: "3 3",
+                },
+              }}
+            />
+          </div>
         </div>
-      </Window>
 
-      {/* IMU */}
-      <Window x={50} y={27} width={50} height={28}>
-        <div className="grid grid-cols-3 gap-2 p-1 h-full content-start">
-          <SectionHeader title="IMU — Accel" />
-          <Cell label="Accel X" value={fmt(ds.data?.imu?.accel?.x)} unit="µg" />
-          <Cell label="Accel Y" value={fmt(ds.data?.imu?.accel?.y)} unit="µg" />
-          <Cell label="Accel Z" value={fmt(ds.data?.imu?.accel?.z)} unit="µg" />
-          <SectionHeader title="IMU — Gyro" />
-          <Cell label="Gyro X"  value={fmt(ds.data?.imu?.angular_vel?.x)}  unit="°/s" />
-          <Cell label="Gyro Y"  value={fmt(ds.data?.imu?.angular_vel?.y)}  unit="°/s" />
-          <Cell label="Gyro Z"  value={fmt(ds.data?.imu?.angular_vel?.z)}  unit="°/s" />
-        </div>
-      </Window>
+        {/* 3. Altitude vs Time Chart */}
+        <div className="w-full min-w-0 rounded-lg border border-white/8 bg-black/25 p-3 overflow-hidden">
+          <div className="flex items-center justify-between mb-1">
+            <p className="font-mono text-[10px] uppercase tracking-[0.35em] text-cyan-200/75">
+              Altitude vs Time
+            </p>
+            <span className="font-mono text-[9px] text-cyan-300 bg-cyan-950/40 px-1.5 py-0.5 rounded border border-cyan-800/40">
+              Live: {altitudeData[altitudeData.length - 1]?.toFixed(0)} ft | Pts: {history.length}
+            </span>
+          </div>
 
-      {/* High-G IMU + Magnetometer */}
-      <Window x={0} y={55} width={40} height={25}>
-        <div className="grid grid-cols-3 gap-2 p-1 h-full content-start">
-          <SectionHeader title="High-G IMU" />
-          <Cell label="Accel X" value={fmt(ds.data?.high_g_imu?.accel?.x)} unit="µg" />
-          <Cell label="Accel Y" value={fmt(ds.data?.high_g_imu?.accel?.y)} unit="µg" />
-          <Cell label="Accel Z" value={fmt(ds.data?.high_g_imu?.accel?.z)} unit="µg" />
-          <SectionHeader title="Magnetometer" />
-          <Cell label="Mag X"   value={fmt(ds.data?.magnetometer?.mag?.x)} unit="µT" />
-          <Cell label="Mag Y"   value={fmt(ds.data?.magnetometer?.mag?.y)} unit="µT" />
-          <Cell label="Mag Z"   value={fmt(ds.data?.magnetometer?.mag?.z)} unit="µT" />
+          <div className="w-full h-[300px] relative">
+            <LineChart
+              height={300}
+              skipAnimation
+              series={[
+                {
+                  data: altitudeData,
+                  label: "Altitude (ft)",
+                  color: "#a855f7",
+                  showMark: false,
+                },
+              ]}
+              xAxis={[
+                {
+                  scaleType: "point",
+                  data: xAxisIndices,
+                  label: "Time",
+                  valueFormatter: (idx: string | number) => history[Number(idx)]?.time.split(".")[0] ?? "",
+                  tickInterval: (_: unknown, index: number) => index % Math.ceil((history.length || 1) / 10) === 0,
+                  tickLabelStyle: { fill: "#94a3b8", fontSize: 10 },
+                },
+              ]}
+              yAxis={[
+                {
+                  width: sharedYAxisWidth,
+                  label: "Altitude (ft)",
+                  min: minAltY - altPadding,
+                  max: maxAltY + altPadding,
+                  valueFormatter: (value: number) => `${Number(value).toFixed(0)} ft`,
+                  tickLabelStyle: { fill: "#fefefe", fontSize: 10 },
+                },
+              ]}
+              margin={sharedMargin}
+              grid={{ horizontal: true }}
+              slotProps={{
+                legend: {},
+              }}
+              sx={{
+                width: "100%",
+                "& .MuiChartsLegend-root, & .MuiChartsLegend-root text, & .MuiChartsLegend-root tspan, & .MuiChartsLegend-label": {
+                  fill: "#f8fafc !important",
+                  color: "#f8fafc !important",
+                  fontSize: "10px !important",
+                },
+                "& .MuiChartsAxis-line, & .MuiChartsAxis-tick": {
+                  stroke: "rgba(255, 255, 255, 0.4) !important",
+                },
+                "& .MuiChartsAxis-label": {
+                  fill: "#94a3b8 !important",
+                  fontSize: "10px",
+                },
+                "& .MuiChartsGrid-line": {
+                  stroke: "rgba(255, 255, 255, 0.05)",
+                  strokeDasharray: "3 3",
+                },
+              }}
+            />
+          </div>
         </div>
-      </Window>
-
-      {/* Barometer */}
-      <Window x={40} y={55} width={60} height={25}>
-        <div className="grid grid-cols-3 gap-2 p-1 h-full content-start">
-          <SectionHeader title="Barometer" />
-          <Cell label="Pressure"    value={fmt(ds.data?.baro?.pressure)}    unit="Pa" />
-          <Cell label="Temperature" value={fmt(ds.data?.baro?.temperature)} unit="°C" />
-          <Cell label="Altitude"    value={fmt(ds.data?.altitude)}          unit="m" />
-        </div>
-      </Window>
-    </main>
+      </div>
+    </div>
   );
+}
+
+function InfoRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <dt className="text-slate-400">{label}</dt>
+      <dd>{value}</dd>
+    </div>
+  );
+}
+
+function DataBox({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-lg border border-white/8 bg-black/35 p-1.5">
+      <p className="text-[8px] uppercase tracking-[0.2em] text-slate-400">{label}</p>
+      <p className="mt-0.5 font-mono text-[9px] text-slate-200">{value}</p>
+    </div>
+  );
+}
+
+function formatValue(value: number | null | undefined, unit: string, decimals: number = 0): string {
+  if (typeof value !== "number") return "--";
+  if (decimals > 0) {
+    return `${value.toFixed(decimals)} ${unit}`;
+  }
+  return `${Math.round(value)} ${unit}`;
 }
