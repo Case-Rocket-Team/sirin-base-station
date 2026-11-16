@@ -3,4 +3,3 @@ if [ ! -d "./.venv" ]; then
 fi
 eval "$(conda shell.bash hook)"
 conda activate ./.venv
-python sirin_demod.py "$@"
