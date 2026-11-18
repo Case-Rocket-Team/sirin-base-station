@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { LineChart } from "@mui/x-charts/LineChart";
 import TelemetryStatus from "./TelemetryStatus";
 import RocketOrientation from "./RocketOrientation";
+import EkfDebugSection from "./EkfDebugSection";
 import { useTelemetrySource } from "../telemetry/useTelemetrySource";
 import type { RecordingFormat, TelemetrySource } from "../telemetry/types";
 
@@ -525,6 +526,9 @@ export default function RawDataPanel({ selectedSource }: Props) {
           </div>
         </div>
       </div>
+
+      {/* EKF debug (USB only) */}
+      <EkfDebugSection source={selectedSource} />
     </div>
   );
 }

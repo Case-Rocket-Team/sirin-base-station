@@ -158,3 +158,48 @@ export type TelemetrySnapshot = {
   replayStatus: ReplayStatus;
   demodStatus: DemodStatus;
 };
+
+/**
+ * EKF debug packet (`OutPacket::EkfDebug` in sirin-shared), USB only, ~100 Hz.
+ * Emitted on `telemetry://usb/ekf-debug`. Field names match the Rust serde output.
+ * Values are in the filter's own units (ft, rad, gauss). Non-finite floats
+ * (NaN/inf) arrive as `null` because JSON can't represent them.
+ */
+export type Vec3F32 = { x: number; y: number; z: number };
+
+export type EkfSettingsData = {
+  /** Accel noise variance, ft²/s⁴ */
+  accel_var_f2ps4: number;
+  /** Accel bias random-walk variance, ft²/s⁴ per s */
+  accel_bias_var_f2ps4: number;
+  /** Gyro noise variance, rad²/s² */
+  gyro_var_rad2ps2: number;
+  /** Gyro bias random-walk variance, rad²/s² per s */
+  gyro_bias_var_rad2ps2: number;
+  /** Barometer measurement variance, ft² */
+  baro_var_ft2: number;
+  /** Magnetometer measurement covariance, 3x3 row-major, gauss² */
+  magn_covar_gauss2: number[];
+  /** Mag bias random-walk variance, gauss² per s */
+  magn_bias_var_gauss2: number;
+  /** GPS position covariance, 3x3 row-major, ft² */
+  gnss_covar_ft2: number[];
+};
+
+export type EkfDebug = {
+  /** Board uptime in ms, same clock as DataState `data.time` */
+  time: number;
+  settings: EkfSettingsData;
+  /** rad/s, board frame */
+  gyro_bias_radps: Vec3F32;
+  /** ft/s², board frame */
+  accel_bias_fps2: Vec3F32;
+  /** gauss, board frame */
+  magn_bias_gauss: Vec3F32;
+  /**
+   * Diagonal of the error-state covariance (variances), 18 entries, x/y/z per block:
+   * 0–2 attitude rad², 3–5 velocity ft²/s², 6–8 position ft²,
+   * 9–11 gyro bias (rad/s)², 12–14 accel bias (ft/s²)², 15–17 mag bias gauss²
+   */
+  covar_diag: number[];
+};

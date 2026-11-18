@@ -44,3 +44,6 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Conda installer (too large for GitHub)
+Miniconda3-*.sh

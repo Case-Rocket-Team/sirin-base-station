@@ -31,7 +31,8 @@ export default function RocketOrientation({ quatW, quatX, quatY, quatZ }: Props)
       <directionalLight position={[3, 5, 4]} intensity={0.9} castShadow />
       <directionalLight position={[-2, 1, -2]} color="#aaccff" intensity={0.3} />
       <Suspense fallback={null}>
-        <Environment preset="city" />
+        {/* Bundled copy of drei's "city" preset, so it works offline at the launch site. */}
+        <Environment files="/hdri/potsdamer_platz_1k.hdr" />
         <RocketModel quaternion={quaternion} />
       </Suspense>
       <DoubleSidedGrid position={[1.5, 0, 1.5]} />

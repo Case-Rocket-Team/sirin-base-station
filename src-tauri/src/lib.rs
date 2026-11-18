@@ -25,6 +25,7 @@ const TIMELINE_EVENT: &str = "telemetry://timeline/state";
 const REPLAY_STATUS_EVENT: &str = "telemetry://replay/status";
 const DEMOD_STATUS_EVENT: &str = "telemetry://demod/status";
 const USB_FLIGHT_ENTRY_EVENT: &str = "telemetry://usb/flight_entry";
+const USB_EKF_DEBUG_EVENT: &str = "telemetry://usb/ekf-debug";
 
 enum PendingReply {
     Config(oneshot::Sender<Result<SirinConfig, String>>),
@@ -768,7 +769,7 @@ async fn usb_export_flight(state: State<'_, TelemetryState>, index: u16) -> Resu
                         writeln!(file, "{},{},{:?},{:?},{:?},{:?},{:?},{:?},{:?},{:?},{:?},{:?},{:?},{:?},{:?},{:?},{:?},{:?},{:?},{:?},{:?},{:?},{:?},{:?},{:?},{:?},{:?},{:?},{:?}",
                             datastate.data.time.value,
                             //datastate.mode,
-                            datastate.data.altitude.value,
+                            datastate.data.raw_altitude.value,
                             datastate.altitude.value,
                             datastate.apogee.map(|a| a.value),
                             datastate.gps_fix.lat,
@@ -1420,6 +1421,14 @@ fn dispatch_error(reply: PendingReply, error: String) -> Result<(), String> {
 }
 
 fn dispatch_usb_packet(app: &AppHandle, state: &TelemetryState, pending_reply: &mut Option<PendingReply>, pending_deadline: &mut Option<std::time::Instant>, packet: OutPacket) {
+    // EKF debug packets arrive at ~100 Hz alongside normal telemetry. Send them on
+    // their own event so they never replace the latest DataState packet, count
+    // toward packet stats or recordings, or touch a pending command reply.
+    if let OutPacket::EkfDebug(debug) = &packet {
+        let _ = app.emit(USB_EKF_DEBUG_EVENT, debug);
+        return;
+    }
+
     // If we're waiting for a reply, check if this packet satisfies it
     if let Some(reply) = pending_reply.take() {
         let mut should_keep_pending = false;
@@ -2089,6 +2098,45 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The frontend's `EkfDebug` type in src/telemetry/types.ts expects exactly this shape.
+    #[test]
+    fn ekf_debug_json_shape_matches_frontend_type() {
+        // Values are exact in f32 so the round trip compares equal.
+        let payload = serde_json::json!({
+            "time": 12345,
+            "settings": {
+                "accel_var_f2ps4": 0.5,
+                "accel_bias_var_f2ps4": 0.0009765625,
+                "gyro_var_rad2ps2": 0.00006103515625,
+                "gyro_bias_var_rad2ps2": 0.000003814697265625,
+                "baro_var_ft2": 4.0,
+                "magn_covar_gauss2": [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0],
+                "magn_bias_var_gauss2": 0.00006103515625,
+                "gnss_covar_ft2": [9.0, 0.0, 0.0, 0.0, 9.0, 0.0, 0.0, 0.0, 25.0]
+            },
+            "gyro_bias_radps": { "x": 0.0078125, "y": -0.015625, "z": 0.03125 },
+            "accel_bias_fps2": { "x": 0.5, "y": -0.25, "z": 0.125 },
+            "magn_bias_gauss": { "x": 0.0009765625, "y": 0.001953125, "z": -0.00390625 },
+            "covar_diag": [
+                1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0,
+                10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0, 17.0, 18.0
+            ]
+        });
+
+        let packet: OutPacket =
+            serde_json::from_value(serde_json::json!({ "EkfDebug": payload.clone() })).unwrap();
+        let OutPacket::EkfDebug(debug) = &packet else { panic!("expected EkfDebug") };
+        assert_eq!(serde_json::to_value(debug).unwrap(), payload);
+
+        // Survives the USB wire format and fits in one packet.
+        let mut buf = [0u8; MAX_OUT_PACKET_SIZE];
+        let len = packet.song_size();
+        assert!(len <= MAX_OUT_PACKET_SIZE, "EkfDebug is {len} bytes");
+        packet.to_song(&mut buf[..len]).unwrap();
+        let decoded = OutPacket::from_song(&buf[..len]).unwrap();
+        assert!(matches!(decoded, OutPacket::EkfDebug(_)));
+    }
 
     #[test]
     fn sanitize_filename_removes_invalid_characters() {
