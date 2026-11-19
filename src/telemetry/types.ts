@@ -160,8 +160,9 @@ export type TelemetrySnapshot = {
 };
 
 /**
- * EKF debug packet (`OutPacket::EkfDebug` in sirin-shared), USB only, ~100 Hz.
- * Emitted on `telemetry://usb/ekf-debug`. Field names match the Rust serde output.
+ * EKF debug packet (`OutPacket::EkfDebug` in sirin-shared). Sent over USB at
+ * ~100 Hz and optionally over LoRa. Emitted on `telemetry://usb/ekf-debug` or
+ * `telemetry://lora/ekf-debug`. Field names match the Rust serde output.
  * Values are in the filter's own units (ft, rad, gauss). Non-finite floats
  * (NaN/inf) arrive as `null` because JSON can't represent them.
  */

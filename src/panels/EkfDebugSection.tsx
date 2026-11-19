@@ -33,7 +33,7 @@ const SIGMA_CHARTS: ChartSpec[] = [
 ];
 
 /**
- * Live EKF debug data (USB only). Owns its own subscription so its 10 Hz
+ * Live EKF debug data from the selected source. Owns its own subscription so its 10 Hz
  * updates don't re-render the rest of RawDataPanel.
  */
 export default function EkfDebugSection({ source }: { source: TelemetrySource }) {
@@ -42,8 +42,6 @@ export default function EkfDebugSection({ source }: { source: TelemetrySource })
   const drawn = useMemo(() => decimate(points, MAX_DRAWN_POINTS), [points]);
   const times = useMemo(() => drawn.map((p) => p.t), [drawn]);
   const latest = points[points.length - 1];
-
-  if (source !== "usb") return null;
 
   return (
     <div className="flex flex-col gap-3 w-full">

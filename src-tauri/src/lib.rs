@@ -26,6 +26,7 @@ const REPLAY_STATUS_EVENT: &str = "telemetry://replay/status";
 const DEMOD_STATUS_EVENT: &str = "telemetry://demod/status";
 const USB_FLIGHT_ENTRY_EVENT: &str = "telemetry://usb/flight_entry";
 const USB_EKF_DEBUG_EVENT: &str = "telemetry://usb/ekf-debug";
+const LORA_EKF_DEBUG_EVENT: &str = "telemetry://lora/ekf-debug";
 
 enum PendingReply {
     Config(oneshot::Sender<Result<SirinConfig, String>>),
@@ -1232,10 +1233,14 @@ async fn run_lora_listener(app: AppHandle) {
                 while let Some(next) = stream.next().await {
                     match next {
                         Ok(Message::Binary(data)) => {
-                            if let Some(packet) = parse_lora_packet(data.to_vec()) {
-                                handle_packet(&app, &state, packet).await;
-                            } else {
-                                mark_rejected(&app, &state, TelemetrySource::Lora, "Rejected corrupt LoRa packet").await;
+                            match parse_lora_packet(data.to_vec()) {
+                                Some(LoraPacket::Telemetry(packet)) => handle_packet(&app, &state, packet).await,
+                                // Same handling as over USB: its own event, kept out of the
+                                // latest packet, link stats and recordings.
+                                Some(LoraPacket::EkfDebug(debug)) => {
+                                    let _ = app.emit(LORA_EKF_DEBUG_EVENT, &debug);
+                                }
+                                None => mark_rejected(&app, &state, TelemetrySource::Lora, "Rejected corrupt LoRa packet").await,
                             }
                         }
                         Ok(_) => {}
@@ -1552,10 +1557,18 @@ async fn emit_next_replay_packet(app: &AppHandle, state: &TelemetryState) -> Res
     Ok(())
 }
 
-fn parse_lora_packet(data: Vec<u8>) -> Option<SirinPacket> {
+enum LoraPacket {
+    Telemetry(SirinPacket),
+    EkfDebug(sirin_shared::packet::EkfDebug),
+}
+
+fn parse_lora_packet(data: Vec<u8>) -> Option<LoraPacket> {
     let packet = RadioPacket::<OutPacket>::from_song(&data).ok()?;
+    if let OutPacket::EkfDebug(debug) = packet.packet {
+        return Some(LoraPacket::EkfDebug(debug));
+    }
     let raw = serde_json::to_value(packet).ok()?;
-    Some(normalize_packet(TelemetrySource::Lora, raw, true))
+    Some(LoraPacket::Telemetry(normalize_packet(TelemetrySource::Lora, raw, true)))
 }
 
 async fn handle_packet(app: &AppHandle, state: &TelemetryState, packet: SirinPacket) {
@@ -2136,6 +2149,18 @@ mod tests {
         packet.to_song(&mut buf[..len]).unwrap();
         let decoded = OutPacket::from_song(&buf[..len]).unwrap();
         assert!(matches!(decoded, OutPacket::EkfDebug(_)));
+
+        // Over LoRa it arrives wrapped like normal telemetry and must be split off.
+        let radio = RadioPacket { id: 7, callsign: *b"KD9ABC\0\0", packet };
+        let radio_len = radio.song_size();
+        assert!(radio_len <= 255, "LoRa EkfDebug is {radio_len} bytes, over the 255-byte LoRa payload limit");
+        let mut radio_buf = vec![0u8; radio_len];
+        radio.to_song(&mut radio_buf).unwrap();
+        match parse_lora_packet(radio_buf) {
+            Some(LoraPacket::EkfDebug(d)) => assert_eq!(serde_json::to_value(&d).unwrap(), payload),
+            Some(LoraPacket::Telemetry(_)) => panic!("EkfDebug went down the normal telemetry path"),
+            None => panic!("LoRa EkfDebug failed to parse"),
+        }
     }
 
     #[test]

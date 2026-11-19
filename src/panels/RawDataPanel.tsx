@@ -210,6 +210,18 @@ export default function RawDataPanel({ selectedSource }: Props) {
               <DataBox label="X" value={formatValue(telemetry.packet?.fields.magXRaw, "")} />
               <DataBox label="Y" value={formatValue(telemetry.packet?.fields.magYRaw, "")} />
               <DataBox label="Z" value={formatValue(telemetry.packet?.fields.magZRaw, "")} />
+              <DataBox
+                label="Total (calibrated)"
+                value={formatValue(
+                  magTotalCalibratedMicrotesla(
+                    telemetry.packet?.fields.magXRaw,
+                    telemetry.packet?.fields.magYRaw,
+                    telemetry.packet?.fields.magZRaw,
+                  ),
+                  "µT",
+                  1,
+                )}
+              />
               <p className="font-semibold text-cyan-300 mb-1 mt-2">E-Match</p>
               <DataBox label="Apogee" value={formatValue(telemetry.packet?.fields.apoVoltageV, "V", 3)} />
               <DataBox label="Main" value={formatValue(telemetry.packet?.fields.mainVoltageV, "V", 3)} />
@@ -527,7 +539,7 @@ export default function RawDataPanel({ selectedSource }: Props) {
         </div>
       </div>
 
-      {/* EKF debug (USB only) */}
+      {/* EKF debug (USB or LoRa, whichever source is selected) */}
       <EkfDebugSection source={selectedSource} />
     </div>
   );
@@ -549,6 +561,40 @@ function DataBox({ label, value }: { label: string; value: string }) {
       <p className="mt-0.5 font-mono text-[9px] text-slate-200">{value}</p>
     </div>
   );
+}
+
+/** LIS3MDL sensitivity at the ±4 gauss range the firmware configures. */
+const MAG_LSB_PER_GAUSS = 6842;
+const MICROTESLA_PER_GAUSS = 100;
+
+/**
+ * Magnetometer hard/soft-iron calibration, in µT. Copied from the firmware
+ * (`MAG_HARD_IRON_UT` / `MAG_SOFT_IRON` in sirin/extended-kalman/src/lib.rs).
+ * Update both places together when the board is recalibrated.
+ */
+const MAG_HARD_IRON_UT = [-18.668148, 42.824524, -175.88482] as const;
+const MAG_SOFT_IRON = [
+  [0.9940695, 0.042993855, -0.019891627],
+  [0.042993855, 0.9750613, 0.007590707],
+  [-0.019891627, 0.007590707, 1.0341376],
+] as const;
+
+/**
+ * Calibrated total magnetic field strength in µT, from raw LIS3MDL counts.
+ * Same math as the firmware's `gauss_to_vec3f`: counts → µT, subtract the
+ * hard-iron offset, then apply the soft-iron matrix.
+ */
+function magTotalCalibratedMicrotesla(
+  x: number | null | undefined,
+  y: number | null | undefined,
+  z: number | null | undefined,
+): number | null {
+  if (typeof x !== "number" || typeof y !== "number" || typeof z !== "number") return null;
+  const offset = [x, y, z].map(
+    (counts, i) => (counts / MAG_LSB_PER_GAUSS) * MICROTESLA_PER_GAUSS - MAG_HARD_IRON_UT[i],
+  );
+  const calibrated = MAG_SOFT_IRON.map((row) => row[0] * offset[0] + row[1] * offset[1] + row[2] * offset[2]);
+  return Math.hypot(calibrated[0], calibrated[1], calibrated[2]);
 }
 
 function formatValue(value: number | null | undefined, unit: string, decimals: number = 0): string {

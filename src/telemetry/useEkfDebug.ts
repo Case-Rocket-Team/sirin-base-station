@@ -2,7 +2,10 @@ import { useEffect, useRef, useState } from "react";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type { EkfDebug, EkfSettingsData, TelemetrySource, Vec3F32 } from "./types";
 
-const EKF_DEBUG_EVENT = "telemetry://usb/ekf-debug";
+const EKF_DEBUG_EVENT_BY_SOURCE = {
+  usb: "telemetry://usb/ekf-debug",
+  lora: "telemetry://lora/ekf-debug",
+} satisfies Record<TelemetrySource, string>;
 
 /** How much history to keep, in board time. */
 const WINDOW_MS = 30_000;
@@ -10,8 +13,14 @@ const WINDOW_MS = 30_000;
 const MAX_POINTS = 3000;
 /** How often buffered packets are pushed to React. */
 const FLUSH_INTERVAL_MS = 100;
-/** No packet for this long counts as "no data". */
-const STALE_AFTER_MS = 1000;
+/**
+ * No packet for this long counts as "no data". USB sends ~100 Hz; radio
+ * sends far less often, so it gets more slack before the charts are hidden.
+ */
+const STALE_AFTER_MS_BY_SOURCE = {
+  usb: 1000,
+  lora: 5000,
+} satisfies Record<TelemetrySource, number>;
 
 const FT_TO_M = 0.3048;
 const RAD_TO_DEG = 57.2958;
@@ -39,14 +48,15 @@ export type EkfPoint = {
 export type EkfDebugState = {
   points: EkfPoint[];
   settings: EkfSettingsData | null;
-  /** True when a packet arrived within the last second. */
+  /** True when a packet arrived recently (see STALE_AFTER_MS_BY_SOURCE). */
   live: boolean;
 };
 
 const EMPTY: EkfDebugState = { points: [], settings: null, live: false };
 
 /**
- * Listens for USB EKF debug packets and keeps a rolling 30 s buffer.
+ * Listens for EKF debug packets from the selected source (USB or LoRa) and
+ * keeps a rolling 30 s buffer.
  * Packets go into a ref and are flushed to state at 10 Hz, so 100 Hz
  * traffic doesn't cause 100 renders per second.
  */
@@ -64,12 +74,11 @@ export function useEkfDebug(source: TelemetrySource): EkfDebugState {
     dirty.current = false;
     setState(EMPTY);
 
-    if (source !== "usb") return;
-
+    const staleAfterMs = STALE_AFTER_MS_BY_SOURCE[source];
     let unlisten: UnlistenFn | null = null;
     let cancelled = false;
 
-    void listen<EkfDebug>(EKF_DEBUG_EVENT, (event) => {
+    void listen<EkfDebug>(EKF_DEBUG_EVENT_BY_SOURCE[source], (event) => {
       const point = toPoint(event.payload);
       const buf = buffer.current;
       const last = buf[buf.length - 1];
@@ -94,7 +103,7 @@ export function useEkfDebug(source: TelemetrySource): EkfDebugState {
     });
 
     const timer = window.setInterval(() => {
-      const live = lastReceivedAt.current != null && Date.now() - lastReceivedAt.current < STALE_AFTER_MS;
+      const live = lastReceivedAt.current != null && Date.now() - lastReceivedAt.current < staleAfterMs;
       if (dirty.current) {
         dirty.current = false;
         setState({ points: buffer.current.slice(), settings: settings.current, live });
